@@ -11,8 +11,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        inlineDynamicImports: true,
         entryFileNames: 'assets/app.js',
-        chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/app.[ext]'
       }
     }
