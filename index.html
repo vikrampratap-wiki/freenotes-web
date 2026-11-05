@@ -17,5 +17,23 @@
   <body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 overflow-hidden select-none">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script type="module">
+      window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+          const root = document.getElementById('root');
+          if (root && root.childElementCount === 0 && !window.__vite_plugin_react_preamble_installed__) {
+            const css = document.createElement('link');
+            css.rel = 'stylesheet';
+            css.href = './public/gh-pages/app.css';
+            document.head.appendChild(css);
+
+            const js = document.createElement('script');
+            js.type = 'module';
+            js.src = './public/gh-pages/app.js';
+            document.body.appendChild(js);
+          }
+        }, 120);
+      });
+    </script>
   </body>
 </html>

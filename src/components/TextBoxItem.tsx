@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TextItem } from '../types';
-import { Trash2, Move, Mic, MicOff } from 'lucide-react';
+import { Trash2, Move, Mic, MicOff, Plus, Minus } from 'lucide-react';
 import { startVoiceDictation } from '../utils/handwritingOcr';
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   onSelect: () => void;
   onUpdate: (updated: TextItem) => void;
   onDelete: () => void;
+  zoom?: number;
 }
 
 export const TextBoxItem: React.FC<Props> = ({
@@ -17,6 +18,7 @@ export const TextBoxItem: React.FC<Props> = ({
   onSelect,
   onUpdate,
   onDelete,
+  zoom = 1,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [text, setText] = useState(item.text);
@@ -77,24 +79,24 @@ export const TextBoxItem: React.FC<Props> = ({
       posX: item.x,
       posY: item.y,
     };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging) return;
-    const dx = e.clientX - dragStartRef.current.mouseX;
-    const dy = e.clientY - dragStartRef.current.mouseY;
+    const dx = (e.clientX - dragStartRef.current.mouseX) / zoom;
+    const dy = (e.clientY - dragStartRef.current.mouseY) / zoom;
     onUpdate({
       ...item,
-      x: Math.max(0, dragStartRef.current.posX + dx),
-      y: Math.max(0, dragStartRef.current.posY + dy),
+      x: Math.max(0, Math.round(dragStartRef.current.posX + dx)),
+      y: Math.max(0, Math.round(dragStartRef.current.posY + dy)),
     });
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
     setIsDragging(false);
     try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch (_) {}
   };
 
@@ -109,26 +111,53 @@ export const TextBoxItem: React.FC<Props> = ({
       }}
       className={`absolute group select-none transition-shadow ${
         isSelected ? 'ring-2 ring-blue-500 rounded-lg shadow-lg' : ''
-      } ${item.isStickyNote ? 'shadow-md rounded-xl p-3 border border-black/10' : ''}`}
+      } ${item.isStickyNote ? 'shadow-md rounded-xl p-3.5 border border-black/10' : ''}`}
       style={{
         left: `${item.x}px`,
         top: `${item.y}px`,
-        minWidth: item.isStickyNote ? '180px' : '80px',
+        minWidth: item.isStickyNote ? '190px' : '90px',
         maxWidth: item.width ? `${item.width}px` : '450px',
         backgroundColor: item.backgroundColor || 'transparent',
         cursor: isDragging ? 'grabbing' : 'grab',
       }}
     >
-      {/* Drag handle & Actions */}
+      {/* Drag handle & Floating Actions */}
       {isSelected && (
-        <>
-          <div className="absolute -top-3 left-2 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] flex items-center gap-1 shadow cursor-move z-20">
+        <div
+          className="absolute -top-9 left-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg px-2 py-1 flex items-center gap-1.5 z-30"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <span className="text-[10px] font-bold text-blue-600 flex items-center gap-0.5 pr-1 border-r border-slate-200 dark:border-slate-700">
             <Move size={10} /> Drag
-          </div>
+          </span>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpdate({ ...item, fontSize: Math.max(11, item.fontSize - 2) });
+            }}
+            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+            title="Decrease Font Size"
+          >
+            <Minus size={11} />
+          </button>
+          <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300">
+            {item.fontSize}px
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpdate({ ...item, fontSize: Math.min(48, item.fontSize + 2) });
+            }}
+            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+            title="Increase Font Size"
+          >
+            <Plus size={11} />
+          </button>
 
           <button
             onClick={toggleDictation}
-            className={`absolute -top-3 right-6 p-1 rounded-full text-white shadow-md transition-all z-20 ${
+            className={`p-1 rounded-lg text-white shadow-sm transition-all ${
               isDictating ? 'bg-red-500 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'
             }`}
             title="बोलकर लिखें (Dictate)"
@@ -141,12 +170,12 @@ export const TextBoxItem: React.FC<Props> = ({
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-3 -right-3 p-1 rounded-full bg-red-600 text-white shadow-md hover:bg-red-700 transition-all z-20"
+            className="p-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all"
             title="Delete"
           >
             <Trash2 size={12} />
           </button>
-        </>
+        </div>
       )}
 
       {isEditing ? (
@@ -165,7 +194,7 @@ export const TextBoxItem: React.FC<Props> = ({
             fontSize: `${item.fontSize}px`,
             color: item.color,
             fontFamily: item.fontFamily || 'Inter, sans-serif',
-            minHeight: `${item.fontSize * 2}px`,
+            minHeight: `${item.fontSize * 2.2}px`,
           }}
         />
       ) : (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Notebook,
   Page,
@@ -8,6 +8,7 @@ import {
   PageTemplate,
   PageColor,
   TextItem,
+  AudioRecording,
 } from '../types';
 import { Toolbar } from './Toolbar';
 import { CanvasPage } from './CanvasPage';
@@ -19,7 +20,6 @@ import { RulerGuide } from './RulerGuide';
 import { ZoomWritingWindow } from './ZoomWritingWindow';
 import { AudioRecorder } from './AudioRecorder';
 import { saveNotebook, createNewPage } from '../utils/storage';
-import { AudioRecording } from '../types';
 
 interface Props {
   initialNotebook: Notebook;
@@ -39,6 +39,11 @@ export const NotebookEditor: React.FC<Props> = ({
   const [eraserType, setEraserType] = useState<EraserType>('stroke');
   const [eraseHighlighterOnly, setEraseHighlighterOnly] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(1.0);
+
+  // Hand Pan state for main workspace
+  const mainScrollRef = useRef<HTMLElement>(null);
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ mouseX: 0, mouseY: 0, scrollLeft: 0, scrollTop: 0 });
 
   // Ruler state
   const [isRulerActive, setIsRulerActive] = useState<boolean>(false);
@@ -84,15 +89,20 @@ export const NotebookEditor: React.FC<Props> = ({
   };
 
   const handleClearPage = () => {
-    if (confirm('Clear all strokes and items on this page?')) {
-      handleUpdatePage({
-        ...currentPage,
-        strokes: [],
-        texts: [],
-        tapes: [],
-        images: [],
-      });
-    }
+    handleUpdatePage({
+      ...currentPage,
+      strokes: [],
+      texts: [],
+      tapes: [],
+      images: [],
+    });
+  };
+
+  const handleTogglePageBookmark = (index = currentPageIndex) => {
+    const updatedPages = notebook.pages.map((p, idx) =>
+      idx === index ? { ...p, isBookmarked: !p.isBookmarked } : p
+    );
+    persistNotebook({ ...notebook, pages: updatedPages });
   };
 
   const handleUndo = useCallback(() => {
@@ -190,15 +200,15 @@ export const NotebookEditor: React.FC<Props> = ({
       const src = e.target?.result as string;
       const img = new Image();
       img.onload = () => {
-        const maxWidth = 350;
-        const scale = maxWidth / img.width;
-        const width = Math.min(maxWidth, img.width);
-        const height = img.height * scale;
+        const maxWidth = 340;
+        const scale = Math.min(1, maxWidth / img.width);
+        const width = Math.round(img.width * scale);
+        const height = Math.round(img.height * scale);
 
         const newImageItem = {
           id: 'img_' + Math.random().toString(36).substring(2, 9),
-          x: 100,
-          y: 200,
+          x: 120,
+          y: 180,
           width,
           height,
           src,
@@ -268,7 +278,14 @@ export const NotebookEditor: React.FC<Props> = ({
         onRedo={handleRedo}
         currentPageIndex={currentPageIndex}
         totalPages={notebook.pages.length}
+        onSelectPage={(idx) => {
+          setCurrentPageIndex(idx);
+          setUndoStack([]);
+          setRedoStack([]);
+        }}
         onAddPage={() => handleAddPage(currentPageIndex)}
+        isCurrentPageBookmarked={Boolean(currentPage.isBookmarked)}
+        onToggleBookmarkPage={() => handleTogglePageBookmark(currentPageIndex)}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         onOpenTemplateModal={() => setIsTemplateModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
@@ -290,8 +307,38 @@ export const NotebookEditor: React.FC<Props> = ({
         audioCount={(notebook.audioRecordings || []).length}
       />
 
-      {/* Main Interactive Canvas Workspace */}
-      <main className="flex-1 overflow-auto p-8 flex justify-center items-start relative pb-64">
+      {/* Main Interactive Canvas Workspace with Hand Pan support */}
+      <main
+        ref={mainScrollRef}
+        onPointerDown={(e) => {
+          if (activeTool === 'hand' || e.button === 1) {
+            isPanningRef.current = true;
+            panStartRef.current = {
+              mouseX: e.clientX,
+              mouseY: e.clientY,
+              scrollLeft: mainScrollRef.current?.scrollLeft || 0,
+              scrollTop: mainScrollRef.current?.scrollTop || 0,
+            };
+          }
+        }}
+        onPointerMove={(e) => {
+          if (isPanningRef.current && mainScrollRef.current) {
+            const dx = e.clientX - panStartRef.current.mouseX;
+            const dy = e.clientY - panStartRef.current.mouseY;
+            mainScrollRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+            mainScrollRef.current.scrollTop = panStartRef.current.scrollTop - dy;
+          }
+        }}
+        onPointerUp={() => {
+          isPanningRef.current = false;
+        }}
+        onPointerLeave={() => {
+          isPanningRef.current = false;
+        }}
+        className={`flex-1 overflow-auto p-6 sm:p-8 flex justify-center items-start relative pb-64 ${
+          activeTool === 'hand' ? 'cursor-grab active:cursor-grabbing' : ''
+        }`}
+      >
         <CanvasPage
           page={currentPage}
           onUpdatePage={handleUpdatePage}
@@ -364,6 +411,7 @@ export const NotebookEditor: React.FC<Props> = ({
         onDuplicatePage={handleDuplicatePage}
         onDeletePage={handleDeletePage}
         onMovePage={handleMovePage}
+        onTogglePageBookmark={handleTogglePageBookmark}
         onOpenTemplateModal={() => setIsTemplateModalOpen(true)}
       />
 
@@ -376,7 +424,7 @@ export const NotebookEditor: React.FC<Props> = ({
         onApply={handleApplyTemplate}
       />
 
-      {/* Sticky Notes Selector Modal */}
+      {/* Sticky Notes & Stickers Selector Modal */}
       <StickyNotesModal
         isOpen={isStickyNotesModalOpen}
         onClose={() => setIsStickyNotesModalOpen(false)}

@@ -19,6 +19,7 @@ const TEMPLATES: { id: PageTemplate; name: string; previewClass: string; desc: s
   { id: 'cornell', name: 'Cornell Notes', previewClass: 'paper-pattern-cornell', desc: 'Best for lectures, cues & summaries' },
   { id: 'planner', name: 'Daily Planner', previewClass: 'paper-pattern-planner', desc: 'Schedule timeline and task blocks' },
   { id: 'todo', name: 'Todo Checklist', previewClass: 'paper-pattern-todo', desc: 'Action items with checkboxes' },
+  { id: 'music', name: 'Music Staff', previewClass: 'paper-pattern-music', desc: '5-line staff for music notation' },
 ];
 
 const COLORS: { id: PageColor; name: string; bgHex: string; textHex: string }[] = [
@@ -27,6 +28,7 @@ const COLORS: { id: PageColor; name: string; bgHex: string; textHex: string }[] 
   { id: 'dark', name: 'Dark Mode', bgHex: '#1e1e24', textHex: '#f8fafc' },
   { id: 'yellow', name: 'Legal Yellow', bgHex: '#fef3c7', textHex: '#78350f' },
   { id: 'mint', name: 'Soft Mint', bgHex: '#ecfdf5', textHex: '#064e3b' },
+  { id: 'pink', name: 'Rose Pink', bgHex: '#fdf2f8', textHex: '#831843' },
 ];
 
 export const TemplateSelectorModal: React.FC<Props> = ({

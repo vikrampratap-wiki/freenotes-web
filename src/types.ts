@@ -99,6 +99,7 @@ export interface Page {
   pdfBackground?: string;
   width?: number; // Custom page width for high-res PDF pages
   height?: number; // Custom page height for high-res PDF pages
+  isBookmarked?: boolean;
 }
 
 export interface QuickPen {
@@ -118,4 +119,5 @@ export interface Notebook {
   pages: Page[];
   tags: string[];
   audioRecordings?: AudioRecording[];
+  isFavorite?: boolean;
 }

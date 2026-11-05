@@ -80,6 +80,34 @@
   background-position: 0 40px;
 }
 
+.paper-pattern-music {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--line-color, #cbd5e1) 0px,
+    var(--line-color, #cbd5e1) 1px,
+    transparent 1px,
+    transparent 8px,
+    var(--line-color, #cbd5e1) 8px,
+    var(--line-color, #cbd5e1) 9px,
+    transparent 9px,
+    transparent 16px,
+    var(--line-color, #cbd5e1) 16px,
+    var(--line-color, #cbd5e1) 17px,
+    transparent 17px,
+    transparent 24px,
+    var(--line-color, #cbd5e1) 24px,
+    var(--line-color, #cbd5e1) 25px,
+    transparent 25px,
+    transparent 32px,
+    var(--line-color, #cbd5e1) 32px,
+    var(--line-color, #cbd5e1) 33px,
+    transparent 33px,
+    transparent 76px
+  );
+  background-position: 0 48px;
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

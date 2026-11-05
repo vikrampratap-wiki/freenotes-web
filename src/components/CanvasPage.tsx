@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import {
   Page,
   ToolType,
@@ -13,8 +13,13 @@ import {
 import { renderPointsToPath } from '../utils/svgPath';
 import { TapeItem } from './TapeItem';
 import { TextBoxItem } from './TextBoxItem';
-import { isPointInPolygon, getBoundingBox, detectGeometricShape, detectScribbleScratch } from '../utils/shapeDetection';
-import { Trash2, Copy, Palette, Move, Check, Type, Loader2, Sparkles } from 'lucide-react';
+import {
+  isPointInPolygon,
+  getBoundingBox,
+  detectGeometricShape,
+  detectScribbleScratch,
+} from '../utils/shapeDetection';
+import { Trash2, Copy, Move, Type, Loader2, Maximize2 } from 'lucide-react';
 import { recognizeStrokesToText } from '../utils/handwritingOcr';
 
 interface Props {
@@ -63,6 +68,7 @@ export const CanvasPage: React.FC<Props> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isOcrConverting, setIsOcrConverting] = useState(false);
+  const [ocrNotice, setOcrNotice] = useState<string | null>(null);
   const [isDraggingZoomBox, setIsDraggingZoomBox] = useState(false);
   const zoomBoxDragStartRef = useRef<{ mouseX: number; mouseY: number; boxX: number; boxY: number }>({
     mouseX: 0,
@@ -74,13 +80,26 @@ export const CanvasPage: React.FC<Props> = ({
   // Active inking state via refs for 120fps zero-latency rendering
   const isDrawingRef = useRef(false);
   const activePointsRef = useRef<Point[]>([]);
-  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const snappedShapeKindRef = useRef<ShapeKind | undefined>(undefined);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Lasso State
   const [lassoingPoints, setLassoingPoints] = useState<Point[] | null>(null);
   const [lassoSelection, setLassoSelection] = useState<LassoSelection | null>(null);
   const [isDraggingLasso, setIsDraggingLasso] = useState(false);
   const lassoDragStartRef = useRef<{ mouseX: number; mouseY: number }>({ mouseX: 0, mouseY: 0 });
+
+  // Image Drag & Resize State
+  const [draggingImageId, setDraggingImageId] = useState<string | null>(null);
+  const [resizingImageId, setResizingImageId] = useState<string | null>(null);
+  const imgDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number; origW: number; origH: number }>({
+    startX: 0,
+    startY: 0,
+    origX: 0,
+    origY: 0,
+    origW: 100,
+    origH: 100,
+  });
 
   // Laser pointer trail
   const [laserPoints, setLaserPoints] = useState<Point[]>([]);
@@ -91,11 +110,9 @@ export const CanvasPage: React.FC<Props> = ({
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
-  // Dynamic canvas dimensions: adapts to PDF page size or standard A4 (794x1123)
   const canvasWidth = page.width || 794;
   const canvasHeight = page.height || 1123;
 
-  // Clear live overlay canvas
   const clearLiveCanvas = useCallback(() => {
     const canvas = liveCanvasRef.current;
     if (!canvas) return;
@@ -115,21 +132,48 @@ export const CanvasPage: React.FC<Props> = ({
     const pts = activePointsRef.current;
     if (pts.length < 2) return;
 
-    if (activeTool === 'shape') {
+    const currentShapeKind = activeTool === 'shape' ? shapeKind : snappedShapeKindRef.current;
+
+    if (currentShapeKind) {
       const p1 = pts[0];
       const p2 = pts[pts.length - 1];
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = strokeSize;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
-      if (shapeKind === 'rectangle') {
-        ctx.strokeRect(Math.min(p1.x, p2.x), Math.min(p1.y, p2.y), Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
-      } else if (shapeKind === 'circle') {
+      if (currentShapeKind === 'rectangle') {
+        ctx.strokeRect(
+          Math.min(p1.x, p2.x),
+          Math.min(p1.y, p2.y),
+          Math.abs(p2.x - p1.x),
+          Math.abs(p2.y - p1.y)
+        );
+      } else if (currentShapeKind === 'circle') {
         const cx = (p1.x + p2.x) / 2;
         const cy = (p1.y + p2.y) / 2;
         const rx = Math.abs(p2.x - p1.x) / 2;
         const ry = Math.abs(p2.y - p1.y) / 2;
         ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.stroke();
+      } else if (currentShapeKind === 'triangle') {
+        ctx.moveTo((p1.x + p2.x) / 2, p1.y);
+        ctx.lineTo(p1.x, p2.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.closePath();
+        ctx.stroke();
+      } else if (currentShapeKind === 'arrow') {
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        ctx.beginPath();
+        ctx.moveTo(p2.x, p2.y);
+        ctx.lineTo(p2.x - 14 * Math.cos(angle - Math.PI / 6), p2.y - 14 * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(p2.x - 14 * Math.cos(angle + Math.PI / 6), p2.y - 14 * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fillStyle = strokeColor;
+        ctx.fill();
       } else {
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
@@ -172,18 +216,19 @@ export const CanvasPage: React.FC<Props> = ({
     let y = (e.clientY - rect.top) / zoom;
     const pressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
 
-    // Ruler edge snapping: if ruler is active, snap line near top edge of ruler
+    // Ruler edge snapping: if ruler is active, snap line near top or bottom edge of ruler
     if (isRulerActive && rulerState && ['ballpoint', 'fountain', 'brush', 'highlighter'].includes(activeTool)) {
       const rad = (rulerState.angle * Math.PI) / 180;
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
-      // Ruler center
       const rcx = rulerState.x + rulerState.width / 2;
       const rcy = rulerState.y + rulerState.height / 2;
-      // Distance from ruler centerline
       const perpDist = (x - rcx) * -sin + (y - rcy) * cos;
-      if (Math.abs(perpDist - rulerState.height / 2) < 22) {
-        // Snap directly onto top edge
+      if (Math.abs(perpDist + rulerState.height / 2) < 24) {
+        const parallelDist = (x - rcx) * cos + (y - rcy) * sin;
+        x = rcx + parallelDist * cos + (rulerState.height / 2) * -sin;
+        y = rcy + parallelDist * sin + (rulerState.height / 2) * cos;
+      } else if (Math.abs(perpDist - rulerState.height / 2) < 24) {
         const parallelDist = (x - rcx) * cos + (y - rcy) * sin;
         x = rcx + parallelDist * cos - (rulerState.height / 2) * -sin;
         y = rcy + parallelDist * sin - (rulerState.height / 2) * cos;
@@ -194,7 +239,6 @@ export const CanvasPage: React.FC<Props> = ({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // If stylus-only mode is active, ignore finger touch on canvas for drawing
     if (isStylusOnly && e.pointerType === 'touch' && activeTool !== 'hand') {
       return;
     }
@@ -205,7 +249,6 @@ export const CanvasPage: React.FC<Props> = ({
 
     const pt = getCoordinates(e);
 
-    // If clicking outside existing lasso selection, clear it
     if (lassoSelection && activeTool === 'lasso') {
       const b = lassoSelection.bounds;
       const insideBox = pt.x >= b.minX - 10 && pt.x <= b.maxX + 10 && pt.y >= b.minY - 10 && pt.y <= b.maxY + 10;
@@ -221,7 +264,7 @@ export const CanvasPage: React.FC<Props> = ({
         id: 'txt_' + Math.random().toString(36).substring(2, 9),
         x: pt.x,
         y: pt.y,
-        text: 'Type your note...',
+        text: 'यहाँ लिखें (Double-click to edit)...',
         fontSize: 20,
         color: strokeColor,
       };
@@ -253,12 +296,11 @@ export const CanvasPage: React.FC<Props> = ({
       return;
     }
 
-    // Inking tools: Ballpoint, Fountain, Brush, Highlighter, Shape
     if (['ballpoint', 'fountain', 'brush', 'highlighter', 'shape'].includes(activeTool)) {
       isDrawingRef.current = true;
+      snappedShapeKindRef.current = undefined;
       activePointsRef.current = [pt];
 
-      // Draw and hold shape detection timer (450ms stationary)
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
 
       renderLiveStroke();
@@ -269,7 +311,7 @@ export const CanvasPage: React.FC<Props> = ({
     const pt = getCoordinates(e);
 
     if (activeTool === 'laser' && e.buttons === 1) {
-      setLaserPoints((prev) => [...prev.slice(-15), pt]);
+      setLaserPoints((prev) => [...prev.slice(-18), pt]);
       return;
     }
 
@@ -278,7 +320,7 @@ export const CanvasPage: React.FC<Props> = ({
       return;
     }
 
-    if (activeTool === 'eraser' && (e.buttons === 1 || e.pressure > 0)) {
+    if (activeTool === 'eraser' && (e.buttons === 1 || (e.pressure && e.pressure > 0))) {
       eraseAtPoint(pt);
       return;
     }
@@ -290,25 +332,30 @@ export const CanvasPage: React.FC<Props> = ({
 
     if (!isDrawingRef.current) return;
 
-    // Reset hold timer on motion
+    // If shape already snapped by holding still, only update if moved significantly
+    if (snappedShapeKindRef.current) {
+      return;
+    }
+
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
 
     activePointsRef.current.push(pt);
     renderLiveStroke();
 
-    // Trigger shape snap if held still at the end of stroke for 450ms
+    // FreeNotes Draw-and-Hold Shape Snap: hold still for 420ms at end of stroke
     holdTimerRef.current = setTimeout(() => {
-      if (isDrawingRef.current && activePointsRef.current.length > 8) {
+      if (isDrawingRef.current && activePointsRef.current.length > 8 && activeTool !== 'shape') {
         const detected = detectGeometricShape(activePointsRef.current);
         if (detected) {
+          snappedShapeKindRef.current = detected.kind;
           activePointsRef.current = detected.points;
           renderLiveStroke();
         }
       }
-    }, 450);
+    }, 420);
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerUp = () => {
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
 
     if (activeTool === 'laser') {
@@ -319,8 +366,8 @@ export const CanvasPage: React.FC<Props> = ({
     if (activeTool === 'tape' && tapeDragStart && tapeDragCurrent) {
       const x = Math.min(tapeDragStart.x, tapeDragCurrent.x);
       const y = Math.min(tapeDragStart.y, tapeDragCurrent.y);
-      const width = Math.max(40, Math.abs(tapeDragCurrent.x - tapeDragStart.x));
-      const height = Math.max(24, Math.abs(tapeDragCurrent.y - tapeDragStart.y));
+      const width = Math.max(50, Math.abs(tapeDragCurrent.x - tapeDragStart.x));
+      const height = Math.max(26, Math.abs(tapeDragCurrent.y - tapeDragStart.y));
 
       const newTape: TapeItemType = {
         id: 'tape_' + Math.random().toString(36).substring(2, 9),
@@ -333,6 +380,7 @@ export const CanvasPage: React.FC<Props> = ({
       };
 
       onUpdatePage({ ...page, tapes: [...page.tapes, newTape] });
+      setSelectedItemId(newTape.id);
       setTapeDragStart(null);
       setTapeDragCurrent(null);
       return;
@@ -340,7 +388,6 @@ export const CanvasPage: React.FC<Props> = ({
 
     // Finalize Lasso selection
     if (activeTool === 'lasso' && lassoingPoints && lassoingPoints.length > 5) {
-      // Find strokes inside lasso
       const selectedStrokes = page.strokes.filter((s) =>
         s.points.some((p) => isPointInPolygon(p, lassoingPoints))
       );
@@ -354,16 +401,25 @@ export const CanvasPage: React.FC<Props> = ({
         isPointInPolygon({ x: img.x + img.width / 2, y: img.y + img.height / 2 }, lassoingPoints)
       );
 
-      if (selectedStrokes.length > 0 || selectedTexts.length > 0 || selectedTapes.length > 0 || selectedImages.length > 0) {
+      if (
+        selectedStrokes.length > 0 ||
+        selectedTexts.length > 0 ||
+        selectedTapes.length > 0 ||
+        selectedImages.length > 0
+      ) {
         const allPoints: Point[] = [];
         selectedStrokes.forEach((s) => allPoints.push(...s.points));
         selectedTexts.forEach((t) => {
           allPoints.push({ x: t.x, y: t.y });
-          allPoints.push({ x: t.x + 100, y: t.y + 40 });
+          allPoints.push({ x: t.x + 120, y: t.y + 40 });
         });
         selectedTapes.forEach((t) => {
           allPoints.push({ x: t.x, y: t.y });
           allPoints.push({ x: t.x + t.width, y: t.y + t.height });
+        });
+        selectedImages.forEach((img) => {
+          allPoints.push({ x: img.x, y: img.y });
+          allPoints.push({ x: img.x + img.width, y: img.y + img.height });
         });
 
         const bounds = getBoundingBox(allPoints.length > 0 ? allPoints : lassoingPoints);
@@ -384,13 +440,15 @@ export const CanvasPage: React.FC<Props> = ({
     isDrawingRef.current = false;
 
     const pts = [...activePointsRef.current];
+    const snappedKind = snappedShapeKindRef.current;
     activePointsRef.current = [];
+    snappedShapeKindRef.current = undefined;
     clearLiveCanvas();
 
     if (pts.length === 0) return;
 
-    // FreeNotes Scratch-to-Erase gesture: rapidly scribbling back and forth over ink erases it!
-    if (activeTool !== 'shape' && detectScribbleScratch(pts)) {
+    // FreeNotes Scratch-to-Erase gesture: rapidly scribbling back and forth over ink erases it
+    if (activeTool !== 'shape' && !snappedKind && detectScribbleScratch(pts)) {
       const scribbleBbox = getBoundingBox(pts);
       const pad = 12;
       const minX = scribbleBbox.minX - pad;
@@ -409,15 +467,12 @@ export const CanvasPage: React.FC<Props> = ({
       }
     }
 
-    // Check if shape was selected or auto-detected
-    let finalShapeKind: ShapeKind | undefined = undefined;
-    if (activeTool === 'shape') {
-      finalShapeKind = shapeKind;
-    }
+    const finalShapeKind: ShapeKind | undefined =
+      activeTool === 'shape' ? shapeKind : snappedKind;
 
     const newStroke: Stroke = {
       id: 'stroke_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
-      type: activeTool,
+      type: finalShapeKind ? 'shape' : activeTool,
       points: pts,
       color: strokeColor,
       size: strokeSize,
@@ -428,28 +483,70 @@ export const CanvasPage: React.FC<Props> = ({
     onUpdatePage({ ...page, strokes: [...page.strokes, newStroke] });
   };
 
+  // Supports both Whole-Stroke Eraser and Precision Pixel Area Eraser
   const eraseAtPoint = (pt: Point) => {
-    const threshold = strokeSize * 2.5 + 12;
+    const threshold = strokeSize * 2.2 + 10;
+    let changed = false;
+    const nextStrokes: Stroke[] = [];
 
-    const remainingStrokes = page.strokes.filter((s) => {
-      // If erase highlighter only is active, skip regular pen strokes
+    for (const s of page.strokes) {
       if (eraseHighlighterOnly && s.type !== 'highlighter') {
-        return true;
+        nextStrokes.push(s);
+        continue;
       }
-      const hit = s.points.some((p) => Math.hypot(p.x - pt.x, p.y - pt.y) < threshold);
-      return !hit;
-    });
+
+      if (eraserType === 'pixel' && s.type !== 'shape' && s.points.length > 2) {
+        // Split stroke into segments outside the eraser radius
+        let currentSegment: Point[] = [];
+        let strokeHit = false;
+        for (const p of s.points) {
+          if (Math.hypot(p.x - pt.x, p.y - pt.y) < threshold) {
+            strokeHit = true;
+            if (currentSegment.length >= 2) {
+              nextStrokes.push({
+                ...s,
+                id: 'stroke_split_' + Math.random().toString(36).substring(2, 9),
+                points: currentSegment,
+              });
+            }
+            currentSegment = [];
+          } else {
+            currentSegment.push(p);
+          }
+        }
+        if (strokeHit) {
+          changed = true;
+          if (currentSegment.length >= 2) {
+            nextStrokes.push({
+              ...s,
+              id: 'stroke_split_' + Math.random().toString(36).substring(2, 9),
+              points: currentSegment,
+            });
+          }
+        } else {
+          nextStrokes.push(s);
+        }
+      } else {
+        const hit = s.points.some((p) => Math.hypot(p.x - pt.x, p.y - pt.y) < threshold);
+        if (hit) {
+          changed = true;
+        } else {
+          nextStrokes.push(s);
+        }
+      }
+    }
 
     const remainingTapes = page.tapes.filter((t) => {
       if (eraseHighlighterOnly) return true;
       const inBounds = pt.x >= t.x && pt.x <= t.x + t.width && pt.y >= t.y && pt.y <= t.y + t.height;
+      if (inBounds) changed = true;
       return !inBounds;
     });
 
-    if (remainingStrokes.length !== page.strokes.length || remainingTapes.length !== page.tapes.length) {
+    if (changed) {
       onUpdatePage({
         ...page,
-        strokes: remainingStrokes,
+        strokes: nextStrokes,
         tapes: remainingTapes,
       });
     }
@@ -460,7 +557,7 @@ export const CanvasPage: React.FC<Props> = ({
     e.stopPropagation();
     setIsDraggingLasso(true);
     lassoDragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const handleLassoDragMove = (e: React.PointerEvent) => {
@@ -469,7 +566,6 @@ export const CanvasPage: React.FC<Props> = ({
     const dy = (e.clientY - lassoDragStartRef.current.mouseY) / zoom;
     lassoDragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY };
 
-    // Move all selected strokes, texts, tapes
     const updatedStrokes = page.strokes.map((s) => {
       if (!lassoSelection.strokeIds.includes(s.id)) return s;
       return {
@@ -486,6 +582,11 @@ export const CanvasPage: React.FC<Props> = ({
     const updatedTapes = page.tapes.map((t) => {
       if (!lassoSelection.tapeIds.includes(t.id)) return t;
       return { ...t, x: t.x + dx, y: t.y + dy };
+    });
+
+    const updatedImages = page.images.map((img) => {
+      if (!lassoSelection.imageIds.includes(img.id)) return img;
+      return { ...img, x: img.x + dx, y: img.y + dy };
     });
 
     setLassoSelection((prev) =>
@@ -508,13 +609,14 @@ export const CanvasPage: React.FC<Props> = ({
       strokes: updatedStrokes,
       texts: updatedTexts,
       tapes: updatedTapes,
+      images: updatedImages,
     });
   };
 
   const handleLassoDragEnd = (e: React.PointerEvent) => {
     setIsDraggingLasso(false);
     try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch (_) {}
   };
 
@@ -542,7 +644,23 @@ export const CanvasPage: React.FC<Props> = ({
       }
     });
 
-    onUpdatePage({ ...page, strokes: [...page.strokes, ...newStrokes] });
+    const newImages: ImageItem[] = [];
+    page.images.forEach((img) => {
+      if (lassoSelection.imageIds.includes(img.id)) {
+        newImages.push({
+          ...img,
+          id: 'img_dup_' + Math.random().toString(36).substring(2, 9),
+          x: img.x + 30,
+          y: img.y + 30,
+        });
+      }
+    });
+
+    onUpdatePage({
+      ...page,
+      strokes: [...page.strokes, ...newStrokes],
+      images: [...page.images, ...newImages],
+    });
     setLassoSelection(null);
   };
 
@@ -553,6 +671,7 @@ export const CanvasPage: React.FC<Props> = ({
 
     try {
       setIsOcrConverting(true);
+      setOcrNotice(null);
       const recognizedText = await recognizeStrokesToText(selectedStrokes);
       if (recognizedText) {
         const remainingStrokes = page.strokes.filter((s) => !lassoSelection.strokeIds.includes(s.id));
@@ -572,7 +691,8 @@ export const CanvasPage: React.FC<Props> = ({
         });
         setLassoSelection(null);
       } else {
-        alert('Could not recognize handwriting. Please ensure letters are clear.');
+        setOcrNotice('हस्तलिपि स्पष्ट नहीं मिली — कृपया अक्षर साफ लिखें।');
+        setTimeout(() => setOcrNotice(null), 3500);
       }
     } catch (err) {
       console.error(err);
@@ -586,7 +706,14 @@ export const CanvasPage: React.FC<Props> = ({
     const updatedStrokes = page.strokes.filter((s) => !lassoSelection.strokeIds.includes(s.id));
     const updatedTexts = page.texts.filter((t) => !lassoSelection.textIds.includes(t.id));
     const updatedTapes = page.tapes.filter((t) => !lassoSelection.tapeIds.includes(t.id));
-    onUpdatePage({ ...page, strokes: updatedStrokes, texts: updatedTexts, tapes: updatedTapes });
+    const updatedImages = page.images.filter((i) => !lassoSelection.imageIds.includes(i.id));
+    onUpdatePage({
+      ...page,
+      strokes: updatedStrokes,
+      texts: updatedTexts,
+      tapes: updatedTapes,
+      images: updatedImages,
+    });
     setLassoSelection(null);
   };
 
@@ -599,6 +726,8 @@ export const CanvasPage: React.FC<Props> = ({
       ? '#fef3c7'
       : page.color === 'mint'
       ? '#ecfdf5'
+      : page.color === 'pink'
+      ? '#fdf2f8'
       : '#ffffff';
 
   const paperLineColor = page.color === 'dark' ? '#334155' : '#e2e8f0';
@@ -623,16 +752,151 @@ export const CanvasPage: React.FC<Props> = ({
         transformOrigin: 'top center',
       } as React.CSSProperties}
     >
-      {/* Background PDF image if imported (High-DPI sharp rendering) */}
+      {/* OCR Feedback Notice */}
+      {ocrNotice && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-lg">
+          {ocrNotice}
+        </div>
+      )}
+
+      {/* Background PDF image if imported */}
       {page.pdfBackground && (
         <img
           src={page.pdfBackground}
           alt="PDF Background"
+          referrerPolicy="no-referrer"
           className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none z-0"
           style={{ imageRendering: 'auto' }}
           loading="eager"
         />
       )}
+
+      {/* Interactive Inserted Images Layer */}
+      {page.images.map((img) => {
+        const isImgSelected = selectedItemId === img.id;
+        return (
+          <div
+            key={img.id}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              setSelectedItemId(img.id);
+              setDraggingImageId(img.id);
+              imgDragRef.current = {
+                startX: e.clientX,
+                startY: e.clientY,
+                origX: img.x,
+                origY: img.y,
+                origW: img.width,
+                origH: img.height,
+              };
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (draggingImageId === img.id) {
+                const dx = (e.clientX - imgDragRef.current.startX) / zoom;
+                const dy = (e.clientY - imgDragRef.current.startY) / zoom;
+                onUpdatePage({
+                  ...page,
+                  images: page.images.map((item) =>
+                    item.id === img.id
+                      ? {
+                          ...item,
+                          x: Math.max(0, Math.round(imgDragRef.current.origX + dx)),
+                          y: Math.max(0, Math.round(imgDragRef.current.origY + dy)),
+                        }
+                      : item
+                  ),
+                });
+              }
+            }}
+            onPointerUp={(e) => {
+              if (draggingImageId === img.id) {
+                setDraggingImageId(null);
+                try {
+                  (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                } catch (_) {}
+              }
+            }}
+            className={`interactive-item absolute z-10 select-none cursor-move group ${
+              isImgSelected ? 'ring-2 ring-blue-500 rounded-lg shadow-xl' : ''
+            }`}
+            style={{
+              left: `${img.x}px`,
+              top: `${img.y}px`,
+              width: `${img.width}px`,
+              height: `${img.height}px`,
+            }}
+          >
+            <img
+              src={img.src}
+              alt="Inserted note graphic"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-contain rounded pointer-events-none select-none"
+            />
+
+            {isImgSelected && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdatePage({
+                      ...page,
+                      images: page.images.filter((item) => item.id !== img.id),
+                    });
+                  }}
+                  className="absolute -top-3 -right-3 p-1.5 rounded-full bg-red-600 text-white shadow-md hover:bg-red-700 z-30"
+                  title="Delete Image"
+                >
+                  <Trash2 size={12} />
+                </button>
+
+                {/* Bottom-right resize handle */}
+                <div
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setResizingImageId(img.id);
+                    imgDragRef.current = {
+                      startX: e.clientX,
+                      startY: e.clientY,
+                      origX: img.x,
+                      origY: img.y,
+                      origW: img.width,
+                      origH: img.height,
+                    };
+                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (resizingImageId === img.id) {
+                      e.stopPropagation();
+                      const dx = (e.clientX - imgDragRef.current.startX) / zoom;
+                      const ratio = imgDragRef.current.origH / Math.max(1, imgDragRef.current.origW);
+                      const newW = Math.max(60, Math.round(imgDragRef.current.origW + dx));
+                      const newH = Math.max(40, Math.round(newW * ratio));
+                      onUpdatePage({
+                        ...page,
+                        images: page.images.map((item) =>
+                          item.id === img.id ? { ...item, width: newW, height: newH } : item
+                        ),
+                      });
+                    }
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    setResizingImageId(null);
+                    try {
+                      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                    } catch (_) {}
+                  }}
+                  className="absolute -bottom-3 -right-3 w-6 h-6 rounded-full bg-blue-600 text-white shadow-md flex items-center justify-center cursor-nwse-resize z-30"
+                  title="Drag to resize image"
+                >
+                  <Maximize2 size={11} />
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
 
       {/* SVG Vector Layer for all saved strokes */}
       <svg
@@ -640,7 +904,7 @@ export const CanvasPage: React.FC<Props> = ({
         className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible"
       >
         {page.strokes.map((stroke) => {
-          if (stroke.type === 'shape' && stroke.shapeKind && stroke.points.length >= 2) {
+          if (stroke.shapeKind && stroke.points.length >= 2) {
             const p1 = stroke.points[0];
             const p2 = stroke.points[stroke.points.length - 1];
             return (
@@ -796,10 +1060,9 @@ export const CanvasPage: React.FC<Props> = ({
         >
           {/* Floating Action Bar */}
           <div
-            className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl flex items-center gap-2 z-30"
+            className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl flex items-center gap-2 z-30 whitespace-nowrap"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Quick color change */}
             <div className="flex items-center gap-1">
               {['#0f172a', '#2563eb', '#dc2626', '#059669', '#7c3aed'].map((col) => (
                 <button
@@ -847,6 +1110,7 @@ export const CanvasPage: React.FC<Props> = ({
         <div key={txt.id} className="interactive-item z-20">
           <TextBoxItem
             item={txt}
+            zoom={zoom}
             isSelected={selectedItemId === txt.id}
             onSelect={() => setSelectedItemId(txt.id)}
             onUpdate={(updated) => {
@@ -870,12 +1134,19 @@ export const CanvasPage: React.FC<Props> = ({
         <div key={tape.id} className="interactive-item z-20">
           <TapeItem
             tape={tape}
+            zoom={zoom}
             isSelected={selectedItemId === tape.id}
             onSelect={() => setSelectedItemId(tape.id)}
             onToggleReveal={() => {
               onUpdatePage({
                 ...page,
                 tapes: page.tapes.map((t) => (t.id === tape.id ? { ...t, isRevealed: !t.isRevealed } : t)),
+              });
+            }}
+            onUpdate={(updated) => {
+              onUpdatePage({
+                ...page,
+                tapes: page.tapes.map((t) => (t.id === updated.id ? updated : t)),
               });
             }}
             onDelete={() => {
@@ -908,7 +1179,7 @@ export const CanvasPage: React.FC<Props> = ({
               boxX: zoomTargetBox.x,
               boxY: zoomTargetBox.y,
             };
-            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
           }}
           onPointerMove={(e) => {
             if (!isDraggingZoomBox || !onUpdateZoomTargetBox) return;
@@ -923,7 +1194,7 @@ export const CanvasPage: React.FC<Props> = ({
           onPointerUp={(e) => {
             setIsDraggingZoomBox(false);
             try {
-              (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
             } catch (_) {}
           }}
         >
