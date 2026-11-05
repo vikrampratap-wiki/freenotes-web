@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Paper Templates */
+.paper-pattern-blank {
+  background-color: var(--paper-bg, #ffffff);
+}
+
+.paper-pattern-ruled {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: repeating-linear-gradient(
+    transparent,
+    transparent 31px,
+    var(--line-color, #e2e8f0) 31px,
+    var(--line-color, #e2e8f0) 32px
+  );
+  background-position: 0 40px;
+}
+
+.paper-pattern-ruled-narrow {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: repeating-linear-gradient(
+    transparent,
+    transparent 23px,
+    var(--line-color, #e2e8f0) 23px,
+    var(--line-color, #e2e8f0) 24px
+  );
+  background-position: 0 32px;
+}
+
+.paper-pattern-grid {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: 
+    linear-gradient(to right, var(--line-color, #e2e8f0) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line-color, #e2e8f0) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.paper-pattern-dotted {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: radial-gradient(var(--line-color, #94a3b8) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+
+.paper-pattern-cornell {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: 
+    repeating-linear-gradient(transparent, transparent 31px, var(--line-color, #e2e8f0) 31px, var(--line-color, #e2e8f0) 32px),
+    linear-gradient(to right, transparent 180px, #f87171 180px, #f87171 182px, transparent 182px);
+  background-position: 0 60px, 0 0;
+}
+
+.paper-pattern-planner {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: 
+    linear-gradient(to right, var(--line-color, #cbd5e1) 1px, transparent 1px),
+    repeating-linear-gradient(transparent, transparent 35px, var(--line-color, #e2e8f0) 35px, var(--line-color, #e2e8f0) 36px);
+  background-size: 200px 100%, 100% 36px;
+  background-position: 0 0, 0 80px;
+}
+
+.paper-pattern-todo {
+  background-color: var(--paper-bg, #ffffff);
+  background-image: repeating-linear-gradient(
+    transparent,
+    transparent 35px,
+    var(--line-color, #e2e8f0) 35px,
+    var(--line-color, #e2e8f0) 36px
+  );
+  background-position: 0 40px;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+/* Pen cursor */
+.canvas-pen {
+  cursor: crosshair;
+}
+
+.canvas-eraser {
+  cursor: cell;
+}
+
+.canvas-hand {
+  cursor: grab;
+}
+
+.canvas-hand:active {
+  cursor: grabbing;
+}
