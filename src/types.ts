@@ -97,6 +97,8 @@ export interface Page {
   tapes: TapeItem[];
   images: ImageItem[];
   pdfBackground?: string;
+  pdfDocId?: string; // Reference to binary PDF stored in IndexedDB for large files
+  pdfPageNumber?: number; // 1-based page number in the referenced PDF
   width?: number; // Custom page width for high-res PDF pages
   height?: number; // Custom page height for high-res PDF pages
   isBookmarked?: boolean;

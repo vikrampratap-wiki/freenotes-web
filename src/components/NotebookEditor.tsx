@@ -20,6 +20,7 @@ import { RulerGuide } from './RulerGuide';
 import { ZoomWritingWindow } from './ZoomWritingWindow';
 import { AudioRecorder } from './AudioRecorder';
 import { saveNotebook, createNewPage } from '../utils/storage';
+import { importPdfFileToPages } from '../utils/pdfEngine';
 
 interface Props {
   initialNotebook: Notebook;
@@ -39,6 +40,7 @@ export const NotebookEditor: React.FC<Props> = ({
   const [eraserType, setEraserType] = useState<EraserType>('stroke');
   const [eraseHighlighterOnly, setEraseHighlighterOnly] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(1.0);
+  const [importBanner, setImportBanner] = useState<string | null>(null);
 
   // Hand Pan state for main workspace
   const mainScrollRef = useRef<HTMLElement>(null);
@@ -160,8 +162,12 @@ export const NotebookEditor: React.FC<Props> = ({
   const handleDuplicatePage = (index: number) => {
     const sourcePage = notebook.pages[index];
     const duplicatedPage: Page = {
-      ...JSON.parse(JSON.stringify(sourcePage)),
+      ...sourcePage,
       id: 'page_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+      strokes: [...sourcePage.strokes],
+      texts: [...sourcePage.texts],
+      tapes: [...sourcePage.tapes],
+      images: [...sourcePage.images],
     };
     const newPages = [...notebook.pages];
     newPages.splice(index + 1, 0, duplicatedPage);
@@ -192,6 +198,23 @@ export const NotebookEditor: React.FC<Props> = ({
       template,
       color,
     });
+  };
+
+  const handleImportPdfInNotebook = async (file: File) => {
+    try {
+      setImportBanner('PDF पेज लोड हो रहे हैं...');
+      const { pages: pdfPages } = await importPdfFileToPages(file, (msg) => setImportBanner(msg));
+      if (pdfPages.length > 0) {
+        const newPages = [...notebook.pages];
+        newPages.splice(currentPageIndex + 1, 0, ...pdfPages);
+        persistNotebook({ ...notebook, pages: newPages });
+        setCurrentPageIndex(currentPageIndex + 1);
+      }
+    } catch (err) {
+      console.error('Failed to import PDF into notebook:', err);
+    } finally {
+      setImportBanner(null);
+    }
   };
 
   const handleInsertImage = (file: File) => {
@@ -293,6 +316,7 @@ export const NotebookEditor: React.FC<Props> = ({
         zoom={zoom}
         setZoom={setZoom}
         onInsertImage={handleInsertImage}
+        onImportPdf={handleImportPdfInNotebook}
         isRulerActive={isRulerActive}
         onToggleRuler={() => setIsRulerActive((prev) => !prev)}
         tapeCount={currentPage.tapes.length}
@@ -307,9 +331,22 @@ export const NotebookEditor: React.FC<Props> = ({
         audioCount={(notebook.audioRecordings || []).length}
       />
 
-      {/* Main Interactive Canvas Workspace with Hand Pan support */}
+      {importBanner && (
+        <div className="bg-blue-600 text-white text-xs font-semibold py-1.5 px-4 text-center">
+          {importBanner}
+        </div>
+      )}
+
+      {/* Main Interactive Canvas Workspace with Hand Pan & Ctrl+Wheel Zoom support */}
       <main
         ref={mainScrollRef}
+        onWheel={(e) => {
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 0.12 : -0.12;
+            setZoom((z) => Math.min(4.0, Math.max(0.4, Number((z + delta).toFixed(2)))));
+          }
+        }}
         onPointerDown={(e) => {
           if (activeTool === 'hand' || e.button === 1) {
             isPanningRef.current = true;

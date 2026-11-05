@@ -20,12 +20,7 @@ import {
   Folder,
 } from 'lucide-react';
 import { createNewPage, saveNotebook, deleteNotebook } from '../utils/storage';
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configure pdfjs worker safely
-try {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-} catch (_) {}
+import { importPdfFileToPages } from '../utils/pdfEngine';
 
 interface Props {
   notebooks: Notebook[];
@@ -113,10 +108,18 @@ export const ShelfView: React.FC<Props> = ({
 
   const handleDuplicate = async (nb: Notebook) => {
     const duplicated: Notebook = {
-      ...JSON.parse(JSON.stringify(nb)),
+      ...nb,
       id: 'nb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
       title: `${nb.title} (Copy)`,
       updatedAt: Date.now(),
+      pages: nb.pages.map((p) => ({
+        ...p,
+        id: 'page_' + Math.random().toString(36).substring(2, 9),
+        strokes: [...p.strokes],
+        texts: [...p.texts],
+        tapes: [...p.tapes],
+        images: [...p.images],
+      })),
     };
     await saveNotebook(duplicated);
     onRefreshNotebooks();
@@ -136,48 +139,8 @@ export const ShelfView: React.FC<Props> = ({
 
     try {
       setIsImporting(true);
-      setImportProgress('Reading PDF...');
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const numPages = pdf.numPages;
-
-      const newPages = [];
-
-      for (let i = 1; i <= numPages; i++) {
-        setImportProgress(`Rendering Page ${i} / ${numPages}...`);
-        const page = await pdf.getPage(i);
-        const unscaledViewport = page.getViewport({ scale: 1.0 });
-        const renderScale = 2.5;
-        const viewport = page.getViewport({ scale: renderScale });
-
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d');
-
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          await page.render({ canvasContext: ctx, viewport }).promise;
-          const bgDataUrl = canvas.toDataURL('image/png');
-
-          const logicalWidth = Math.round(unscaledViewport.width * 1.3333);
-          const logicalHeight = Math.round(unscaledViewport.height * 1.3333);
-
-          newPages.push({
-            id: 'page_pdf_' + i + '_' + Date.now(),
-            template: 'blank' as PageTemplate,
-            color: 'white' as PageColor,
-            strokes: [],
-            texts: [],
-            tapes: [],
-            images: [],
-            pdfBackground: bgDataUrl,
-            width: logicalWidth,
-            height: logicalHeight,
-          });
-        }
-      }
+      setImportProgress('बड़ी PDF फ़ाइल लोड हो रही है...');
+      const { pages: newPages } = await importPdfFileToPages(file, (msg) => setImportProgress(msg));
 
       const importedNotebook: Notebook = {
         id: 'nb_pdf_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
@@ -202,26 +165,31 @@ export const ShelfView: React.FC<Props> = ({
     }
   };
 
-  const handleJsonRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleJsonRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const parsed = JSON.parse(ev.target?.result as string);
-        if (parsed.id && parsed.pages) {
-          parsed.id = 'nb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
-          parsed.title = parsed.title + ' (Restored)';
-          await saveNotebook(parsed);
-          onRefreshNotebooks();
-          showToast('नोटबुक सफलतापूर्वक रीस्टोर हो गई!');
-        }
-      } catch (_) {
+    try {
+      setIsImporting(true);
+      setImportProgress('बैकअप फ़ाइल रीस्टोर हो रही है...');
+      const textContent = await file.text();
+      const parsed = JSON.parse(textContent);
+      if (parsed.id && parsed.pages) {
+        parsed.id = 'nb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+        parsed.title = parsed.title + ' (Restored)';
+        await saveNotebook(parsed);
+        onRefreshNotebooks();
+        showToast('नोटबुक सफलतापूर्वक रीस्टोर हो गई!');
+      } else {
         showToast('अमान्य बैकअप JSON फ़ाइल।');
       }
-    };
-    reader.readAsText(file);
+    } catch (_) {
+      showToast('अमान्य बैकअप JSON फ़ाइल।');
+    } finally {
+      setIsImporting(false);
+      setImportProgress('');
+      if (jsonInputRef.current) jsonInputRef.current.value = '';
+    }
   };
 
   return (

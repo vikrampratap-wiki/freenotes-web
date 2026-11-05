@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   Page,
   ToolType,
@@ -21,6 +21,7 @@ import {
 } from '../utils/shapeDetection';
 import { Trash2, Copy, Move, Type, Loader2, Maximize2 } from 'lucide-react';
 import { recognizeStrokesToText } from '../utils/handwritingOcr';
+import { renderPdfPageToCanvas } from '../utils/pdfEngine';
 
 interface Props {
   page: Page;
@@ -66,6 +67,7 @@ export const CanvasPage: React.FC<Props> = ({
   isStylusOnly = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isOcrConverting, setIsOcrConverting] = useState(false);
   const [ocrNotice, setOcrNotice] = useState<string | null>(null);
@@ -112,6 +114,33 @@ export const CanvasPage: React.FC<Props> = ({
 
   const canvasWidth = page.width || 794;
   const canvasHeight = page.height || 1123;
+
+  // Render Ultra-HD vector PDF page whenever page or zoom changes
+  useEffect(() => {
+    if (!page.pdfDocId || !page.pdfPageNumber || !pdfCanvasRef.current) return;
+    let activeTask: { cancel: () => void } | null = null;
+    let isMounted = true;
+
+    renderPdfPageToCanvas(
+      page.pdfDocId,
+      page.pdfPageNumber,
+      pdfCanvasRef.current,
+      canvasWidth,
+      canvasHeight,
+      zoom
+    ).then((task) => {
+      if (isMounted) {
+        activeTask = task;
+      } else {
+        task.cancel();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      activeTask?.cancel();
+    };
+  }, [page.pdfDocId, page.pdfPageNumber, canvasWidth, canvasHeight, zoom]);
 
   const clearLiveCanvas = useCallback(() => {
     const canvas = liveCanvasRef.current;
@@ -332,7 +361,6 @@ export const CanvasPage: React.FC<Props> = ({
 
     if (!isDrawingRef.current) return;
 
-    // If shape already snapped by holding still, only update if moved significantly
     if (snappedShapeKindRef.current) {
       return;
     }
@@ -342,7 +370,6 @@ export const CanvasPage: React.FC<Props> = ({
     activePointsRef.current.push(pt);
     renderLiveStroke();
 
-    // FreeNotes Draw-and-Hold Shape Snap: hold still for 420ms at end of stroke
     holdTimerRef.current = setTimeout(() => {
       if (isDrawingRef.current && activePointsRef.current.length > 8 && activeTool !== 'shape') {
         const detected = detectGeometricShape(activePointsRef.current);
@@ -447,7 +474,6 @@ export const CanvasPage: React.FC<Props> = ({
 
     if (pts.length === 0) return;
 
-    // FreeNotes Scratch-to-Erase gesture: rapidly scribbling back and forth over ink erases it
     if (activeTool !== 'shape' && !snappedKind && detectScribbleScratch(pts)) {
       const scribbleBbox = getBoundingBox(pts);
       const pad = 12;
@@ -483,7 +509,6 @@ export const CanvasPage: React.FC<Props> = ({
     onUpdatePage({ ...page, strokes: [...page.strokes, newStroke] });
   };
 
-  // Supports both Whole-Stroke Eraser and Precision Pixel Area Eraser
   const eraseAtPoint = (pt: Point) => {
     const threshold = strokeSize * 2.2 + 10;
     let changed = false;
@@ -496,7 +521,6 @@ export const CanvasPage: React.FC<Props> = ({
       }
 
       if (eraserType === 'pixel' && s.type !== 'shape' && s.points.length > 2) {
-        // Split stroke into segments outside the eraser radius
         let currentSegment: Point[] = [];
         let strokeHit = false;
         for (const p of s.points) {
@@ -552,7 +576,7 @@ export const CanvasPage: React.FC<Props> = ({
     }
   };
 
-  // Lasso Actions: Move, Color Change, Duplicate, Delete
+  // Lasso Actions
   const handleLassoDragStart = (e: React.PointerEvent) => {
     e.stopPropagation();
     setIsDraggingLasso(true);
@@ -734,218 +758,222 @@ export const CanvasPage: React.FC<Props> = ({
 
   return (
     <div
-      ref={containerRef}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onClick={() => setSelectedItemId(null)}
-      className={`relative shadow-2xl rounded-sm transition-transform border border-slate-200/80 dark:border-slate-800 paper-pattern-${page.template} touch-none ${
-        activeTool === 'eraser' ? 'canvas-eraser' : activeTool === 'hand' ? 'canvas-hand' : 'canvas-pen'
-      }`}
       style={{
-        width: `${canvasWidth}px`,
-        height: `${canvasHeight}px`,
-        minHeight: `${canvasHeight}px`,
-        '--paper-bg': paperBgColor,
-        '--line-color': paperLineColor,
-        transform: `scale(${zoom})`,
-        transformOrigin: 'top center',
-      } as React.CSSProperties}
+        width: `${Math.round(canvasWidth * zoom)}px`,
+        height: `${Math.round(canvasHeight * zoom)}px`,
+        position: 'relative',
+        flexShrink: 0,
+      }}
     >
-      {/* OCR Feedback Notice */}
-      {ocrNotice && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-lg">
-          {ocrNotice}
-        </div>
-      )}
+      <div
+        ref={containerRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onClick={() => setSelectedItemId(null)}
+        className={`relative shadow-2xl rounded-sm border border-slate-200/80 dark:border-slate-800 paper-pattern-${page.template} touch-none ${
+          activeTool === 'eraser' ? 'canvas-eraser' : activeTool === 'hand' ? 'canvas-hand' : 'canvas-pen'
+        }`}
+        style={{
+          width: `${canvasWidth}px`,
+          height: `${canvasHeight}px`,
+          minHeight: `${canvasHeight}px`,
+          '--paper-bg': paperBgColor,
+          '--line-color': paperLineColor,
+          transform: `scale(${zoom})`,
+          transformOrigin: 'top left',
+        } as React.CSSProperties}
+      >
+        {/* OCR Feedback Notice */}
+        {ocrNotice && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-lg">
+            {ocrNotice}
+          </div>
+        )}
 
-      {/* Background PDF image if imported */}
-      {page.pdfBackground && (
-        <img
-          src={page.pdfBackground}
-          alt="PDF Background"
-          referrerPolicy="no-referrer"
-          className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none z-0"
-          style={{ imageRendering: 'auto' }}
-          loading="eager"
-        />
-      )}
+        {/* Ultra-HD Vector PDF Canvas Layer (for pdfDocId pages) */}
+        {page.pdfDocId && page.pdfPageNumber && (
+          <canvas
+            ref={pdfCanvasRef}
+            className="absolute inset-0 w-full h-full pointer-events-none select-none z-0"
+          />
+        )}
 
-      {/* Interactive Inserted Images Layer */}
-      {page.images.map((img) => {
-        const isImgSelected = selectedItemId === img.id;
-        return (
-          <div
-            key={img.id}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              setSelectedItemId(img.id);
-              setDraggingImageId(img.id);
-              imgDragRef.current = {
-                startX: e.clientX,
-                startY: e.clientY,
-                origX: img.x,
-                origY: img.y,
-                origW: img.width,
-                origH: img.height,
-              };
-              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-            }}
-            onPointerMove={(e) => {
-              if (draggingImageId === img.id) {
-                const dx = (e.clientX - imgDragRef.current.startX) / zoom;
-                const dy = (e.clientY - imgDragRef.current.startY) / zoom;
-                onUpdatePage({
-                  ...page,
-                  images: page.images.map((item) =>
-                    item.id === img.id
-                      ? {
-                          ...item,
-                          x: Math.max(0, Math.round(imgDragRef.current.origX + dx)),
-                          y: Math.max(0, Math.round(imgDragRef.current.origY + dy)),
-                        }
-                      : item
-                  ),
-                });
-              }
-            }}
-            onPointerUp={(e) => {
-              if (draggingImageId === img.id) {
-                setDraggingImageId(null);
-                try {
-                  (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                } catch (_) {}
-              }
-            }}
-            className={`interactive-item absolute z-10 select-none cursor-move group ${
-              isImgSelected ? 'ring-2 ring-blue-500 rounded-lg shadow-xl' : ''
-            }`}
-            style={{
-              left: `${img.x}px`,
-              top: `${img.y}px`,
-              width: `${img.width}px`,
-              height: `${img.height}px`,
-            }}
-          >
-            <img
-              src={img.src}
-              alt="Inserted note graphic"
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-contain rounded pointer-events-none select-none"
-            />
+        {/* Legacy Background PDF image fallback */}
+        {!page.pdfDocId && page.pdfBackground && (
+          <img
+            src={page.pdfBackground}
+            alt="PDF Background"
+            referrerPolicy="no-referrer"
+            className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none z-0"
+            style={{ imageRendering: 'auto' }}
+            loading="eager"
+          />
+        )}
 
-            {isImgSelected && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onUpdatePage({
-                      ...page,
-                      images: page.images.filter((item) => item.id !== img.id),
-                    });
-                  }}
-                  className="absolute -top-3 -right-3 p-1.5 rounded-full bg-red-600 text-white shadow-md hover:bg-red-700 z-30"
-                  title="Delete Image"
-                >
-                  <Trash2 size={12} />
-                </button>
+        {/* Interactive Inserted Images Layer */}
+        {page.images.map((img) => {
+          const isImgSelected = selectedItemId === img.id;
+          return (
+            <div
+              key={img.id}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                setSelectedItemId(img.id);
+                setDraggingImageId(img.id);
+                imgDragRef.current = {
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  origX: img.x,
+                  origY: img.y,
+                  origW: img.width,
+                  origH: img.height,
+                };
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (draggingImageId === img.id) {
+                  const dx = (e.clientX - imgDragRef.current.startX) / zoom;
+                  const dy = (e.clientY - imgDragRef.current.startY) / zoom;
+                  onUpdatePage({
+                    ...page,
+                    images: page.images.map((item) =>
+                      item.id === img.id
+                        ? {
+                            ...item,
+                            x: Math.max(0, Math.round(imgDragRef.current.origX + dx)),
+                            y: Math.max(0, Math.round(imgDragRef.current.origY + dy)),
+                          }
+                        : item
+                    ),
+                  });
+                }
+              }}
+              onPointerUp={(e) => {
+                if (draggingImageId === img.id) {
+                  setDraggingImageId(null);
+                  try {
+                    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                  } catch (_) {}
+                }
+              }}
+              className={`interactive-item absolute z-10 select-none cursor-move group ${
+                isImgSelected ? 'ring-2 ring-blue-500 rounded-lg shadow-xl' : ''
+              }`}
+              style={{
+                left: `${img.x}px`,
+                top: `${img.y}px`,
+                width: `${img.width}px`,
+                height: `${img.height}px`,
+              }}
+            >
+              <img
+                src={img.src}
+                alt="Inserted note graphic"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-contain rounded pointer-events-none select-none"
+              />
 
-                {/* Bottom-right resize handle */}
-                <div
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    setResizingImageId(img.id);
-                    imgDragRef.current = {
-                      startX: e.clientX,
-                      startY: e.clientY,
-                      origX: img.x,
-                      origY: img.y,
-                      origW: img.width,
-                      origH: img.height,
-                    };
-                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                  }}
-                  onPointerMove={(e) => {
-                    if (resizingImageId === img.id) {
+              {isImgSelected && (
+                <>
+                  <button
+                    onClick={(e) => {
                       e.stopPropagation();
-                      const dx = (e.clientX - imgDragRef.current.startX) / zoom;
-                      const ratio = imgDragRef.current.origH / Math.max(1, imgDragRef.current.origW);
-                      const newW = Math.max(60, Math.round(imgDragRef.current.origW + dx));
-                      const newH = Math.max(40, Math.round(newW * ratio));
                       onUpdatePage({
                         ...page,
-                        images: page.images.map((item) =>
-                          item.id === img.id ? { ...item, width: newW, height: newH } : item
-                        ),
+                        images: page.images.filter((item) => item.id !== img.id),
                       });
-                    }
-                  }}
-                  onPointerUp={(e) => {
-                    e.stopPropagation();
-                    setResizingImageId(null);
-                    try {
-                      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-                    } catch (_) {}
-                  }}
-                  className="absolute -bottom-3 -right-3 w-6 h-6 rounded-full bg-blue-600 text-white shadow-md flex items-center justify-center cursor-nwse-resize z-30"
-                  title="Drag to resize image"
-                >
-                  <Maximize2 size={11} />
-                </div>
-              </>
-            )}
-          </div>
-        );
-      })}
+                    }}
+                    className="absolute -top-3 -right-3 p-1.5 rounded-full bg-red-600 text-white shadow-md hover:bg-red-700 z-30"
+                    title="Delete Image"
+                  >
+                    <Trash2 size={12} />
+                  </button>
 
-      {/* SVG Vector Layer for all saved strokes */}
-      <svg
-        viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-        className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible"
-      >
-        {page.strokes.map((stroke) => {
-          if (stroke.shapeKind && stroke.points.length >= 2) {
-            const p1 = stroke.points[0];
-            const p2 = stroke.points[stroke.points.length - 1];
-            return (
-              <g key={stroke.id}>
-                {stroke.shapeKind === 'rectangle' && (
-                  <rect
-                    x={Math.min(p1.x, p2.x)}
-                    y={Math.min(p1.y, p2.y)}
-                    width={Math.abs(p2.x - p1.x)}
-                    height={Math.abs(p2.y - p1.y)}
-                    stroke={stroke.color}
-                    strokeWidth={stroke.size}
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                )}
-                {stroke.shapeKind === 'circle' && (
-                  <ellipse
-                    cx={(p1.x + p2.x) / 2}
-                    cy={(p1.y + p2.y) / 2}
-                    rx={Math.abs(p2.x - p1.x) / 2}
-                    ry={Math.abs(p2.y - p1.y) / 2}
-                    stroke={stroke.color}
-                    strokeWidth={stroke.size}
-                    fill="none"
-                  />
-                )}
-                {stroke.shapeKind === 'line' && (
-                  <line
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    stroke={stroke.color}
-                    strokeWidth={stroke.size}
-                    strokeLinecap="round"
-                  />
-                )}
-                {stroke.shapeKind === 'arrow' && (
-                  <g>
+                  {/* Bottom-right resize handle */}
+                  <div
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      setResizingImageId(img.id);
+                      imgDragRef.current = {
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        origX: img.x,
+                        origY: img.y,
+                        origW: img.width,
+                        origH: img.height,
+                      };
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    }}
+                    onPointerMove={(e) => {
+                      if (resizingImageId === img.id) {
+                        e.stopPropagation();
+                        const dx = (e.clientX - imgDragRef.current.startX) / zoom;
+                        const ratio = imgDragRef.current.origH / Math.max(1, imgDragRef.current.origW);
+                        const newW = Math.max(60, Math.round(imgDragRef.current.origW + dx));
+                        const newH = Math.max(40, Math.round(newW * ratio));
+                        onUpdatePage({
+                          ...page,
+                          images: page.images.map((item) =>
+                            item.id === img.id ? { ...item, width: newW, height: newH } : item
+                          ),
+                        });
+                      }
+                    }}
+                    onPointerUp={(e) => {
+                      e.stopPropagation();
+                      setResizingImageId(null);
+                      try {
+                        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                      } catch (_) {}
+                    }}
+                    className="absolute -bottom-3 -right-3 w-6 h-6 rounded-full bg-blue-600 text-white shadow-md flex items-center justify-center cursor-nwse-resize z-30"
+                    title="Drag to resize image"
+                  >
+                    <Maximize2 size={11} />
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+
+        {/* SVG Vector Layer for all saved strokes */}
+        <svg
+          viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+          className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible"
+        >
+          {page.strokes.map((stroke) => {
+            if (stroke.shapeKind && stroke.points.length >= 2) {
+              const p1 = stroke.points[0];
+              const p2 = stroke.points[stroke.points.length - 1];
+              return (
+                <g key={stroke.id}>
+                  {stroke.shapeKind === 'rectangle' && (
+                    <rect
+                      x={Math.min(p1.x, p2.x)}
+                      y={Math.min(p1.y, p2.y)}
+                      width={Math.abs(p2.x - p1.x)}
+                      height={Math.abs(p2.y - p1.y)}
+                      stroke={stroke.color}
+                      strokeWidth={stroke.size}
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                  {stroke.shapeKind === 'circle' && (
+                    <ellipse
+                      cx={(p1.x + p2.x) / 2}
+                      cy={(p1.y + p2.y) / 2}
+                      rx={Math.abs(p2.x - p1.x) / 2}
+                      ry={Math.abs(p2.y - p1.y) / 2}
+                      stroke={stroke.color}
+                      strokeWidth={stroke.size}
+                      fill="none"
+                    />
+                  )}
+                  {stroke.shapeKind === 'line' && (
                     <line
                       x1={p1.x}
                       y1={p1.y}
@@ -955,255 +983,267 @@ export const CanvasPage: React.FC<Props> = ({
                       strokeWidth={stroke.size}
                       strokeLinecap="round"
                     />
+                  )}
+                  {stroke.shapeKind === 'arrow' && (
+                    <g>
+                      <line
+                        x1={p1.x}
+                        y1={p1.y}
+                        x2={p2.x}
+                        y2={p2.y}
+                        stroke={stroke.color}
+                        strokeWidth={stroke.size}
+                        strokeLinecap="round"
+                      />
+                      <polygon
+                        points={`${p2.x},${p2.y} ${p2.x - 12},${p2.y - 7} ${p2.x - 12},${p2.y + 7}`}
+                        fill={stroke.color}
+                        transform={`rotate(${
+                          (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI
+                        }, ${p2.x}, ${p2.y})`}
+                      />
+                    </g>
+                  )}
+                  {stroke.shapeKind === 'triangle' && (
                     <polygon
-                      points={`${p2.x},${p2.y} ${p2.x - 12},${p2.y - 7} ${p2.x - 12},${p2.y + 7}`}
-                      fill={stroke.color}
-                      transform={`rotate(${
-                        (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI
-                      }, ${p2.x}, ${p2.y})`}
+                      points={`${(p1.x + p2.x) / 2},${p1.y} ${p1.x},${p2.y} ${p2.x},${p2.y}`}
+                      stroke={stroke.color}
+                      strokeWidth={stroke.size}
+                      fill="none"
+                      strokeLinejoin="round"
                     />
-                  </g>
-                )}
-                {stroke.shapeKind === 'triangle' && (
-                  <polygon
-                    points={`${(p1.x + p2.x) / 2},${p1.y} ${p1.x},${p2.y} ${p2.x},${p2.y}`}
-                    stroke={stroke.color}
-                    strokeWidth={stroke.size}
-                    fill="none"
-                    strokeLinejoin="round"
-                  />
-                )}
-              </g>
-            );
-          }
+                  )}
+                </g>
+              );
+            }
 
-          const pathData = renderPointsToPath(stroke);
-          if (!pathData) return null;
+            const pathData = renderPointsToPath(stroke);
+            if (!pathData) return null;
 
-          return (
-            <path
-              key={stroke.id}
-              d={pathData}
-              fill={stroke.color}
-              opacity={stroke.opacity}
-              style={{
-                mixBlendMode: stroke.type === 'highlighter' ? 'multiply' : 'normal',
-              }}
-            />
-          );
-        })}
-
-        {/* Live Lasso loop preview */}
-        {lassoingPoints && lassoingPoints.length > 1 && (
-          <path
-            d={`M ${lassoingPoints.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`}
-            fill="rgba(147, 51, 234, 0.12)"
-            stroke="#9333ea"
-            strokeWidth="1.5"
-            strokeDasharray="5 5"
-          />
-        )}
-
-        {/* Tape drag live preview */}
-        {tapeDragStart && tapeDragCurrent && (
-          <rect
-            x={Math.min(tapeDragStart.x, tapeDragCurrent.x)}
-            y={Math.min(tapeDragStart.y, tapeDragCurrent.y)}
-            width={Math.abs(tapeDragCurrent.x - tapeDragStart.x)}
-            height={Math.abs(tapeDragCurrent.y - tapeDragStart.y)}
-            fill="#f59e0b"
-            opacity={0.8}
-            stroke="#d97706"
-            strokeDasharray="4 4"
-          />
-        )}
-
-        {/* Laser pointer trail */}
-        {laserPoints.length > 0 && (
-          <g>
-            {laserPoints.map((p, idx) => (
-              <circle
-                key={idx}
-                cx={p.x}
-                cy={p.y}
-                r={idx === laserPoints.length - 1 ? 6 : (idx / laserPoints.length) * 5}
-                fill="#ef4444"
-                opacity={idx / laserPoints.length}
-                className="blur-[1px]"
+            return (
+              <path
+                key={stroke.id}
+                d={pathData}
+                fill={stroke.color}
+                opacity={stroke.opacity}
+                style={{
+                  mixBlendMode: stroke.type === 'highlighter' ? 'multiply' : 'normal',
+                }}
               />
-            ))}
-          </g>
-        )}
-      </svg>
+            );
+          })}
 
-      {/* Zero-latency Live Inking HTML5 Canvas Overlay */}
-      <canvas
-        ref={liveCanvasRef}
-        width={canvasWidth}
-        height={canvasHeight}
-        className="absolute inset-0 pointer-events-none z-15"
-      />
+          {/* Live Lasso loop preview */}
+          {lassoingPoints && lassoingPoints.length > 1 && (
+            <path
+              d={`M ${lassoingPoints.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`}
+              fill="rgba(147, 51, 234, 0.12)"
+              stroke="#9333ea"
+              strokeWidth="1.5"
+              strokeDasharray="5 5"
+            />
+          )}
 
-      {/* Lasso Selection Bounding Box & Floating Action Menu */}
-      {lassoSelection && (
-        <div
-          className="absolute border-2 border-dashed border-purple-600 bg-purple-500/10 z-25 pointer-events-auto rounded cursor-move select-none"
-          style={{
-            left: `${lassoSelection.bounds.minX - 8}px`,
-            top: `${lassoSelection.bounds.minY - 8}px`,
-            width: `${lassoSelection.bounds.width + 16}px`,
-            height: `${lassoSelection.bounds.height + 16}px`,
-          }}
-          onPointerDown={handleLassoDragStart}
-          onPointerMove={handleLassoDragMove}
-          onPointerUp={handleLassoDragEnd}
-        >
-          {/* Floating Action Bar */}
-          <div
-            className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl flex items-center gap-2 z-30 whitespace-nowrap"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-1">
-              {['#0f172a', '#2563eb', '#dc2626', '#059669', '#7c3aed'].map((col) => (
-                <button
-                  key={col}
-                  onClick={() => handleLassoChangeColor(col)}
-                  className="w-4 h-4 rounded-full border border-black/20 hover:scale-125 transition-transform"
-                  style={{ backgroundColor: col }}
-                  title="Change color"
+          {/* Tape drag live preview */}
+          {tapeDragStart && tapeDragCurrent && (
+            <rect
+              x={Math.min(tapeDragStart.x, tapeDragCurrent.x)}
+              y={Math.min(tapeDragStart.y, tapeDragCurrent.y)}
+              width={Math.abs(tapeDragCurrent.x - tapeDragStart.x)}
+              height={Math.abs(tapeDragCurrent.y - tapeDragStart.y)}
+              fill="#f59e0b"
+              opacity={0.8}
+              stroke="#d97706"
+              strokeDasharray="4 4"
+            />
+          )}
+
+          {/* Laser pointer trail */}
+          {laserPoints.length > 0 && (
+            <g>
+              {laserPoints.map((p, idx) => (
+                <circle
+                  key={idx}
+                  cx={p.x}
+                  cy={p.y}
+                  r={idx === laserPoints.length - 1 ? 6 : (idx / laserPoints.length) * 5}
+                  fill="#ef4444"
+                  opacity={idx / laserPoints.length}
+                  className="blur-[1px]"
                 />
               ))}
+            </g>
+          )}
+        </svg>
+
+        {/* Zero-latency Live Inking HTML5 Canvas Overlay */}
+        <canvas
+          ref={liveCanvasRef}
+          width={canvasWidth}
+          height={canvasHeight}
+          className="absolute inset-0 pointer-events-none z-15"
+        />
+
+        {/* Lasso Selection Bounding Box & Floating Action Menu */}
+        {lassoSelection && (
+          <div
+            className="absolute border-2 border-dashed border-purple-600 bg-purple-500/10 z-25 pointer-events-auto rounded cursor-move select-none"
+            style={{
+              left: `${lassoSelection.bounds.minX - 8}px`,
+              top: `${lassoSelection.bounds.minY - 8}px`,
+              width: `${lassoSelection.bounds.width + 16}px`,
+              height: `${lassoSelection.bounds.height + 16}px`,
+            }}
+            onPointerDown={handleLassoDragStart}
+            onPointerMove={handleLassoDragMove}
+            onPointerUp={handleLassoDragEnd}
+          >
+            <div
+              className="absolute -top-12 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl flex items-center gap-2 z-30 whitespace-nowrap"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-1">
+                {['#0f172a', '#2563eb', '#dc2626', '#059669', '#7c3aed'].map((col) => (
+                  <button
+                    key={col}
+                    onClick={() => handleLassoChangeColor(col)}
+                    className="w-4 h-4 rounded-full border border-black/20 hover:scale-125 transition-transform"
+                    style={{ backgroundColor: col }}
+                    title="Change color"
+                  />
+                ))}
+              </div>
+
+              <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700" />
+
+              <button
+                onClick={handleLassoOcrConvert}
+                disabled={isOcrConverting}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-all disabled:opacity-50"
+                title="Convert selected handwriting to computerized digital text"
+              >
+                {isOcrConverting ? <Loader2 size={12} className="animate-spin" /> : <Type size={12} />}
+                <span className="text-[11px]">हस्तलिपि ➔ टेक्स्ट (OCR)</span>
+              </button>
+
+              <button
+                onClick={handleLassoDuplicate}
+                className="p-1 rounded text-slate-600 dark:text-slate-300 hover:text-blue-600"
+                title="Duplicate"
+              >
+                <Copy size={14} />
+              </button>
+              <button
+                onClick={handleLassoDelete}
+                className="p-1 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
+                title="Delete"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
-
-            <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700" />
-
-            <button
-              onClick={handleLassoOcrConvert}
-              disabled={isOcrConverting}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-all disabled:opacity-50"
-              title="Convert selected handwriting to computerized digital text"
-            >
-              {isOcrConverting ? <Loader2 size={12} className="animate-spin" /> : <Type size={12} />}
-              <span className="text-[11px]">हस्तलिपि ➔ टेक्स्ट (OCR)</span>
-            </button>
-
-            <button
-              onClick={handleLassoDuplicate}
-              className="p-1 rounded text-slate-600 dark:text-slate-300 hover:text-blue-600"
-              title="Duplicate"
-            >
-              <Copy size={14} />
-            </button>
-            <button
-              onClick={handleLassoDelete}
-              className="p-1 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
-              title="Delete"
-            >
-              <Trash2 size={14} />
-            </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Interactive Text & Sticky Notes Layer */}
-      {page.texts.map((txt) => (
-        <div key={txt.id} className="interactive-item z-20">
-          <TextBoxItem
-            item={txt}
-            zoom={zoom}
-            isSelected={selectedItemId === txt.id}
-            onSelect={() => setSelectedItemId(txt.id)}
-            onUpdate={(updated) => {
-              onUpdatePage({
-                ...page,
-                texts: page.texts.map((t) => (t.id === updated.id ? updated : t)),
-              });
-            }}
-            onDelete={() => {
-              onUpdatePage({
-                ...page,
-                texts: page.texts.filter((t) => t.id !== txt.id),
-              });
-            }}
-          />
-        </div>
-      ))}
+        {/* Interactive Text & Sticky Notes Layer */}
+        {page.texts.map((txt) => (
+          <div key={txt.id} className="interactive-item z-20">
+            <TextBoxItem
+              item={txt}
+              zoom={zoom}
+              isSelected={selectedItemId === txt.id}
+              onSelect={() => setSelectedItemId(txt.id)}
+              onUpdate={(updated) => {
+                onUpdatePage({
+                  ...page,
+                  texts: page.texts.map((t) => (t.id === updated.id ? updated : t)),
+                });
+              }}
+              onDelete={() => {
+                onUpdatePage({
+                  ...page,
+                  texts: page.texts.filter((t) => t.id !== txt.id),
+                });
+              }}
+            />
+          </div>
+        ))}
 
-      {/* Interactive Study Tape Layer */}
-      {page.tapes.map((tape) => (
-        <div key={tape.id} className="interactive-item z-20">
-          <TapeItem
-            tape={tape}
-            zoom={zoom}
-            isSelected={selectedItemId === tape.id}
-            onSelect={() => setSelectedItemId(tape.id)}
-            onToggleReveal={() => {
-              onUpdatePage({
-                ...page,
-                tapes: page.tapes.map((t) => (t.id === tape.id ? { ...t, isRevealed: !t.isRevealed } : t)),
-              });
-            }}
-            onUpdate={(updated) => {
-              onUpdatePage({
-                ...page,
-                tapes: page.tapes.map((t) => (t.id === updated.id ? updated : t)),
-              });
-            }}
-            onDelete={() => {
-              onUpdatePage({
-                ...page,
-                tapes: page.tapes.filter((t) => t.id !== tape.id),
-              });
-            }}
-            isEditing={activeTool === 'lasso'}
-          />
-        </div>
-      ))}
+        {/* Interactive Study Tape Layer */}
+        {page.tapes.map((tape) => (
+          <div key={tape.id} className="interactive-item z-20">
+            <TapeItem
+              tape={tape}
+              zoom={zoom}
+              isSelected={selectedItemId === tape.id}
+              onSelect={() => setSelectedItemId(tape.id)}
+              onToggleReveal={() => {
+                onUpdatePage({
+                  ...page,
+                  tapes: page.tapes.map((t) => (t.id === tape.id ? { ...t, isRevealed: !t.isRevealed } : t)),
+                });
+              }}
+              onUpdate={(updated) => {
+                onUpdatePage({
+                  ...page,
+                  tapes: page.tapes.map((t) => (t.id === updated.id ? updated : t)),
+                });
+              }}
+              onDelete={() => {
+                onUpdatePage({
+                  ...page,
+                  tapes: page.tapes.filter((t) => t.id !== tape.id),
+                });
+              }}
+              isEditing={activeTool === 'lasso'}
+            />
+          </div>
+        ))}
 
-      {/* Target Box for Zoom Writing Window */}
-      {isZoomWindowOpen && zoomTargetBox && (
-        <div
-          className="absolute border-2 border-blue-500 bg-blue-500/15 rounded z-25 cursor-move flex items-center justify-between px-2 select-none shadow-md group"
-          style={{
-            left: `${zoomTargetBox.x}px`,
-            top: `${zoomTargetBox.y}px`,
-            width: `${zoomTargetBox.width}px`,
-            height: `${zoomTargetBox.height}px`,
-          }}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            setIsDraggingZoomBox(true);
-            zoomBoxDragStartRef.current = {
-              mouseX: e.clientX,
-              mouseY: e.clientY,
-              boxX: zoomTargetBox.x,
-              boxY: zoomTargetBox.y,
-            };
-            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (!isDraggingZoomBox || !onUpdateZoomTargetBox) return;
-            const dx = (e.clientX - zoomBoxDragStartRef.current.mouseX) / zoom;
-            const dy = (e.clientY - zoomBoxDragStartRef.current.mouseY) / zoom;
-            onUpdateZoomTargetBox({
-              ...zoomTargetBox,
-              x: Math.max(0, zoomBoxDragStartRef.current.boxX + dx),
-              y: Math.max(0, zoomBoxDragStartRef.current.boxY + dy),
-            });
-          }}
-          onPointerUp={(e) => {
-            setIsDraggingZoomBox(false);
-            try {
-              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-            } catch (_) {}
-          }}
-        >
-          <span className="text-[10px] font-bold text-blue-700 bg-white/80 dark:bg-slate-900/80 px-1.5 py-0.5 rounded shadow-sm">
-            Writing Box
-          </span>
-          <Move size={12} className="text-blue-700" />
-        </div>
-      )}
+        {/* Target Box for Zoom Writing Window */}
+        {isZoomWindowOpen && zoomTargetBox && (
+          <div
+            className="absolute border-2 border-blue-500 bg-blue-500/15 rounded z-25 cursor-move flex items-center justify-between px-2 select-none shadow-md group"
+            style={{
+              left: `${zoomTargetBox.x}px`,
+              top: `${zoomTargetBox.y}px`,
+              width: `${zoomTargetBox.width}px`,
+              height: `${zoomTargetBox.height}px`,
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              setIsDraggingZoomBox(true);
+              zoomBoxDragStartRef.current = {
+                mouseX: e.clientX,
+                mouseY: e.clientY,
+                boxX: zoomTargetBox.x,
+                boxY: zoomTargetBox.y,
+              };
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (!isDraggingZoomBox || !onUpdateZoomTargetBox) return;
+              const dx = (e.clientX - zoomBoxDragStartRef.current.mouseX) / zoom;
+              const dy = (e.clientY - zoomBoxDragStartRef.current.mouseY) / zoom;
+              onUpdateZoomTargetBox({
+                ...zoomTargetBox,
+                x: Math.max(0, zoomBoxDragStartRef.current.boxX + dx),
+                y: Math.max(0, zoomBoxDragStartRef.current.boxY + dy),
+              });
+            }}
+            onPointerUp={(e) => {
+              setIsDraggingZoomBox(false);
+              try {
+                (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+              } catch (_) {}
+            }}
+          >
+            <span className="text-[10px] font-bold text-blue-700 bg-white/80 dark:bg-slate-900/80 px-1.5 py-0.5 rounded shadow-sm">
+              Writing Box
+            </span>
+            <Move size={12} className="text-blue-700" />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

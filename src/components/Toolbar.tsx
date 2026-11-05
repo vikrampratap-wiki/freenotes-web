@@ -76,6 +76,7 @@ interface Props {
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   onInsertImage: (file: File) => void;
+  onImportPdf?: (file: File) => void;
   isRulerActive: boolean;
   onToggleRuler: () => void;
   tapeCount: number;
@@ -148,6 +149,7 @@ export const Toolbar: React.FC<Props> = ({
   zoom,
   setZoom,
   onInsertImage,
+  onImportPdf,
   isRulerActive,
   onToggleRuler,
   tapeCount,
@@ -162,12 +164,20 @@ export const Toolbar: React.FC<Props> = ({
   audioCount,
 }) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const [quickPens, setQuickPens] = useState<QuickPen[]>(DEFAULT_QUICK_PENS);
   const [confirmClear, setConfirmClear] = useState(false);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       onInsertImage(e.target.files[0]);
+      e.target.value = '';
+    }
+  };
+
+  const handlePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0] && onImportPdf) {
+      onImportPdf(e.target.files[0]);
       e.target.value = '';
     }
   };
@@ -547,22 +557,44 @@ export const Toolbar: React.FC<Props> = ({
             <Sliders size={17} />
           </button>
 
-          {/* Zoom */}
-          <div className="hidden xl:flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+          {/* Import PDF inside Notebook */}
+          {onImportPdf && (
             <button
-              onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.1).toFixed(1))))}
-              className="p-0.5 rounded text-slate-500 hover:text-slate-800"
+              onClick={() => pdfInputRef.current?.click()}
+              className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-xl bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 text-[11px] font-semibold hover:bg-red-100 transition-all whitespace-nowrap shrink-0"
+              title="Import PDF pages into this notebook"
+            >
+              <span>+ PDF</span>
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept=".pdf"
+                onChange={handlePdfChange}
+                className="hidden"
+              />
+            </button>
+          )}
+
+          {/* Always-visible Zoom Controls (40% to 400%) */}
+          <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 px-1.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
+              className="p-0.5 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white"
               title="Zoom Out"
             >
               <ZoomOut size={13} />
             </button>
-            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 px-1 tabular-nums">
-              {Math.round(zoom * 100)}%
-            </span>
             <button
-              onClick={() => setZoom((z) => Math.min(2.5, Number((z + 0.1).toFixed(1))))}
-              className="p-0.5 rounded text-slate-500 hover:text-slate-800"
-              title="Zoom In"
+              onClick={() => setZoom(1.0)}
+              className="text-[11px] font-bold text-slate-700 dark:text-slate-300 px-1 tabular-nums hover:text-blue-600"
+              title="Reset Zoom to 100%"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              onClick={() => setZoom((z) => Math.min(4.0, Number((z + 0.15).toFixed(2))))}
+              className="p-0.5 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              title="Zoom In (Ultra-HD PDF)"
             >
               <ZoomIn size={13} />
             </button>
