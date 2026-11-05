@@ -1,0 +1,7 @@
+{
+  "name": "FreeNotes Web - Ultimate Free Digital Note-Taking",
+  "description": "Free, unlimited digital notebook with realistic pens, PDF annotation, templates, tape tool, and infinite creativity.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

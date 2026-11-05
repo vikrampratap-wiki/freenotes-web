@@ -59,7 +59,18 @@ cd freenotes-web
 npm install
 npm run dev
 ```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## 🌐 GitHub Pages Deployment (गिटहब पेज कैसे चालू करें)
+
+यह प्रोजेक्ट **GitHub Pages** के लिए पूरी तरह तैयार (`base: './'` और `.github/workflows/deploy.yml` के साथ) है:
+
+1. अपने कोड को GitHub रिपॉजिटरी के `main` ब्रांच में Push करें।
+2. अपने GitHub रिपॉजिटरी में **Settings** ➡️ बाएं मेनू में **Pages** पर जाएं।
+3. **Build and deployment** के अंतर्गत **Source** में **`GitHub Actions`** चुनें (न कि *Deploy from a branch*)।
+4. **Actions** टैब में जाएं — `Deploy to GitHub Pages` वर्कफ़्लो अपने आप ऐप को Build करके लाइव कर देगा!
 
 ---
 
