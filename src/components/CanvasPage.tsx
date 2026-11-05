@@ -22,6 +22,7 @@ import {
 import { Trash2, Copy, Move, Type, Loader2, Maximize2 } from 'lucide-react';
 import { recognizeStrokesToText } from '../utils/handwritingOcr';
 import { renderPdfPageToCanvas } from '../utils/pdfEngine';
+import { generateId } from '../utils/storage';
 
 interface Props {
   page: Page;
@@ -290,7 +291,7 @@ export const CanvasPage: React.FC<Props> = ({
 
     if (activeTool === 'text') {
       const newText: TextItem = {
-        id: 'txt_' + Math.random().toString(36).substring(2, 9),
+        id: generateId('txt'),
         x: pt.x,
         y: pt.y,
         text: 'यहाँ लिखें (Double-click to edit)...',
@@ -397,7 +398,7 @@ export const CanvasPage: React.FC<Props> = ({
       const height = Math.max(26, Math.abs(tapeDragCurrent.y - tapeDragStart.y));
 
       const newTape: TapeItemType = {
-        id: 'tape_' + Math.random().toString(36).substring(2, 9),
+        id: generateId('tape'),
         x,
         y,
         width,
@@ -497,7 +498,7 @@ export const CanvasPage: React.FC<Props> = ({
       activeTool === 'shape' ? shapeKind : snappedKind;
 
     const newStroke: Stroke = {
-      id: 'stroke_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+      id: generateId('stroke'),
       type: finalShapeKind ? 'shape' : activeTool,
       points: pts,
       color: strokeColor,
@@ -529,7 +530,7 @@ export const CanvasPage: React.FC<Props> = ({
             if (currentSegment.length >= 2) {
               nextStrokes.push({
                 ...s,
-                id: 'stroke_split_' + Math.random().toString(36).substring(2, 9),
+                id: generateId('stroke_split'),
                 points: currentSegment,
               });
             }
@@ -543,7 +544,7 @@ export const CanvasPage: React.FC<Props> = ({
           if (currentSegment.length >= 2) {
             nextStrokes.push({
               ...s,
-              id: 'stroke_split_' + Math.random().toString(36).substring(2, 9),
+              id: generateId('stroke_split'),
               points: currentSegment,
             });
           }
@@ -662,7 +663,7 @@ export const CanvasPage: React.FC<Props> = ({
       if (lassoSelection.strokeIds.includes(s.id)) {
         newStrokes.push({
           ...s,
-          id: 'stroke_dup_' + Math.random().toString(36).substring(2, 9),
+          id: generateId('stroke_dup'),
           points: s.points.map((p) => ({ ...p, x: p.x + 30, y: p.y + 30 })),
         });
       }
@@ -673,7 +674,7 @@ export const CanvasPage: React.FC<Props> = ({
       if (lassoSelection.imageIds.includes(img.id)) {
         newImages.push({
           ...img,
-          id: 'img_dup_' + Math.random().toString(36).substring(2, 9),
+          id: generateId('img_dup'),
           x: img.x + 30,
           y: img.y + 30,
         });
@@ -700,7 +701,7 @@ export const CanvasPage: React.FC<Props> = ({
       if (recognizedText) {
         const remainingStrokes = page.strokes.filter((s) => !lassoSelection.strokeIds.includes(s.id));
         const newTextItem: TextItem = {
-          id: 'txt_ocr_' + Math.random().toString(36).substring(2, 9),
+          id: generateId('txt_ocr'),
           x: lassoSelection.bounds.minX,
           y: lassoSelection.bounds.minY,
           text: recognizedText,
@@ -771,7 +772,7 @@ export const CanvasPage: React.FC<Props> = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onClick={() => setSelectedItemId(null)}
-        className={`relative shadow-2xl rounded-sm border border-slate-200/80 dark:border-slate-800 paper-pattern-${page.template} touch-none ${
+        className={`relative shadow-2xl rounded-sm border border-slate-200/80 dark:border-slate-800 paper-pattern-${page.template} touch-none select-none ${
           activeTool === 'eraser' ? 'canvas-eraser' : activeTool === 'hand' ? 'canvas-hand' : 'canvas-pen'
         }`}
         style={{

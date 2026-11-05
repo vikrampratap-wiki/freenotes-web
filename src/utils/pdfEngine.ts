@@ -1,6 +1,6 @@
-import { get, set, del } from 'idb-keyval';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Page, PageColor, PageTemplate } from '../types';
+import { dbGet, dbSet, dbDel, generateId } from './storage';
 
 const PDF_BLOB_PREFIX = 'freenotes_pdf_blob_';
 
@@ -14,10 +14,9 @@ const pdfDocCache = new Map<string, pdfjsLib.PDFDocumentProxy>();
 const pdfBytesCache = new Map<string, Uint8Array>();
 
 export async function savePdfBinary(pdfDocId: string, bytes: Uint8Array): Promise<void> {
-  // Store a copy in memory cache
   pdfBytesCache.set(pdfDocId, bytes);
   try {
-    await set(PDF_BLOB_PREFIX + pdfDocId, bytes);
+    await dbSet(PDF_BLOB_PREFIX + pdfDocId, bytes);
   } catch (err) {
     console.error('Failed to persist PDF binary in IndexedDB:', err);
   }
@@ -27,7 +26,7 @@ export async function deletePdfBinary(pdfDocId: string): Promise<void> {
   pdfDocCache.delete(pdfDocId);
   pdfBytesCache.delete(pdfDocId);
   try {
-    await del(PDF_BLOB_PREFIX + pdfDocId);
+    await dbDel(PDF_BLOB_PREFIX + pdfDocId);
   } catch (_) {}
 }
 
@@ -39,7 +38,7 @@ export async function getPdfDocument(pdfDocId: string): Promise<pdfjsLib.PDFDocu
   let rawBytes: Uint8Array | undefined = pdfBytesCache.get(pdfDocId);
   if (!rawBytes) {
     try {
-      const stored = await get<Uint8Array | ArrayBuffer>(PDF_BLOB_PREFIX + pdfDocId);
+      const stored = await dbGet<Uint8Array | ArrayBuffer>(PDF_BLOB_PREFIX + pdfDocId);
       if (stored) {
         rawBytes = stored instanceof Uint8Array ? stored : new Uint8Array(stored);
         pdfBytesCache.set(pdfDocId, rawBytes);
@@ -67,8 +66,7 @@ export async function getPdfDocument(pdfDocId: string): Promise<pdfjsLib.PDFDocu
 
 /**
  * Fast, memory-efficient import for PDF files of any size (1 page to 1000+ pages).
- * Instead of rasterizing every page upfront into multi-megabyte base64 strings (which crashes on large PDFs),
- * it stores the raw PDF binary once in IndexedDB and creates lightweight Page descriptors for on-demand Ultra-HD vector rendering.
+ * Stores the raw PDF binary once in IndexedDB and creates lightweight Page descriptors for on-demand Ultra-HD vector rendering.
  */
 export async function importPdfFileToPages(
   file: File,
@@ -77,7 +75,7 @@ export async function importPdfFileToPages(
   onProgress?.('PDF फ़ाइल पढ़ी जा रही है (Reading file)...');
   const arrayBuffer = await file.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
-  const pdfDocId = 'pdfdoc_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+  const pdfDocId = generateId('pdfdoc');
 
   onProgress?.('PDF सुरक्षित स्टोरेज में सेव हो रही है...');
   await savePdfBinary(pdfDocId, bytes);
@@ -96,7 +94,6 @@ export async function importPdfFileToPages(
   const defaultWidth = Math.round(defaultVp.width * 1.3333);
   const defaultHeight = Math.round(defaultVp.height * 1.3333);
 
-  // For PDFs up to 60 pages, inspect exact per-page dimensions; for huge books (60+ pages), sample fast so import finishes in <1.5s
   const inspectEachPage = numPages <= 60;
 
   for (let i = 1; i <= numPages; i++) {
@@ -158,7 +155,6 @@ export async function renderPdfPageToCanvas(
     if (cancelled) return;
 
     const unscaledVp = page.getViewport({ scale: 1.0 });
-    // Compute Ultra-HD scale: adapts dynamically to zoom level and Retina DPI (minimum 2.5x, up to 4.5x when zoomed in)
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const desiredPixelRatio = Math.min(4.5, Math.max(2.6, dpr * Math.max(1.2, zoom) * 1.4));
     const baseScale = logicalWidth / Math.max(1, unscaledVp.width);

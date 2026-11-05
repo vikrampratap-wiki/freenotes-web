@@ -1,4 +1,3 @@
-import { createWorker } from 'tesseract.js';
 import { Stroke, Point } from '../types';
 import { renderPointsToPath } from './svgPath';
 import { getBoundingBox } from './shapeDetection';
@@ -10,6 +9,7 @@ export async function getOcrWorker(lang: 'eng' | 'hin' = 'eng', onProgress?: (pe
   if (!workerPromise || currentLanguage !== lang) {
     currentLanguage = lang;
     workerPromise = (async () => {
+      const { createWorker } = await import('tesseract.js');
       const worker = await createWorker(lang, 1, {
         logger: (m) => {
           if (m.status === 'recognizing text' && onProgress && typeof m.progress === 'number') {
@@ -59,7 +59,6 @@ export async function recognizeStrokesToText(
 
   // Render strokes with bold black ink so OCR model recognizes handwriting easily
   for (const stroke of strokes) {
-    // If stroke size is thin, boost it so characters aren't hairline
     const thickenedStroke: Stroke = {
       ...stroke,
       size: Math.max(5, stroke.size),
@@ -72,7 +71,7 @@ export async function recognizeStrokesToText(
     ctx.fill(path);
   }
 
-  // Recognition with 8s safety timeout to prevent hanging
+  // Recognition with 8.5s safety timeout to prevent hanging
   const ocrPromise = (async () => {
     const worker = await getOcrWorker(lang, onProgress);
     const ret = await worker.recognize(canvas);

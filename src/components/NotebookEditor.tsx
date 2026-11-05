@@ -19,7 +19,7 @@ import { StickyNotesModal } from './StickyNotesModal';
 import { RulerGuide } from './RulerGuide';
 import { ZoomWritingWindow } from './ZoomWritingWindow';
 import { AudioRecorder } from './AudioRecorder';
-import { saveNotebook, createNewPage } from '../utils/storage';
+import { saveNotebook, createNewPage, generateId } from '../utils/storage';
 import { importPdfFileToPages } from '../utils/pdfEngine';
 
 interface Props {
@@ -163,7 +163,7 @@ export const NotebookEditor: React.FC<Props> = ({
     const sourcePage = notebook.pages[index];
     const duplicatedPage: Page = {
       ...sourcePage,
-      id: 'page_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+      id: generateId('page'),
       strokes: [...sourcePage.strokes],
       texts: [...sourcePage.texts],
       tapes: [...sourcePage.tapes],
@@ -229,9 +229,9 @@ export const NotebookEditor: React.FC<Props> = ({
         const height = Math.round(img.height * scale);
 
         const newImageItem = {
-          id: 'img_' + Math.random().toString(36).substring(2, 9),
-          x: 120,
-          y: 180,
+          id: generateId('img'),
+          x: 60,
+          y: 140,
           width,
           height,
           src,
@@ -416,7 +416,7 @@ export const NotebookEditor: React.FC<Props> = ({
         }}
         onAddTextToPage={(text, x, y) => {
           const newTextItem: TextItem = {
-            id: 'txt_zoom_' + Math.random().toString(36).substring(2, 9),
+            id: generateId('txt_zoom'),
             x,
             y,
             text,

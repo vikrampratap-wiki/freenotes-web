@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Point, Stroke, ToolType } from '../types';
 import { renderPointsToPath } from '../utils/svgPath';
 import { recognizeStrokesToText, startVoiceDictation } from '../utils/handwritingOcr';
+import { generateId } from '../utils/storage';
 import {
   ChevronLeft,
   ChevronRight,
@@ -46,6 +47,7 @@ export const ZoomWritingWindow: React.FC<Props> = ({
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrLang, setOcrLang] = useState<'eng' | 'hin'>('eng');
   const [isDictating, setIsDictating] = useState(false);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const dictationStopperRef = useRef<{ stop: () => void } | null>(null);
 
   // Zoom scale: 3x magnification for easy finger writing
@@ -133,7 +135,7 @@ export const ZoomWritingWindow: React.FC<Props> = ({
 
     // 1. Save locally to show in zoom window
     const newLocalStroke: Stroke = {
-      id: 'z_stroke_' + Math.random().toString(36).substring(2, 9),
+      id: generateId('z_stroke'),
       type: activeTool,
       points: pts,
       color: strokeColor,
@@ -150,7 +152,7 @@ export const ZoomWritingWindow: React.FC<Props> = ({
     }));
 
     const pageStroke: Stroke = {
-      id: 'p_stroke_' + Math.random().toString(36).substring(2, 9),
+      id: generateId('p_stroke'),
       type: activeTool,
       points: scaledPoints,
       color: strokeColor,
@@ -197,6 +199,7 @@ export const ZoomWritingWindow: React.FC<Props> = ({
     if (localStrokes.length === 0) return;
     try {
       setIsOcrLoading(true);
+      setStatusNotice(null);
       setOcrProgress(10);
       const text = await recognizeStrokesToText(localStrokes, 24, ocrLang, (p) => setOcrProgress(p));
       if (text) {
@@ -204,11 +207,11 @@ export const ZoomWritingWindow: React.FC<Props> = ({
         setLocalStrokes([]);
         handleStepForward();
       } else {
-        alert('Could not recognize handwriting. Please try again or use the Microphone button to dictate directly.');
+        setStatusNotice('हस्तलिपि स्पष्ट नहीं मिली। कृपया साफ लिखें या माइक से बोलें।');
       }
     } catch (err) {
       console.error(err);
-      alert('OCR error. Please write clearly or use Voice Dictation.');
+      setStatusNotice('OCR त्रुटि — कृपया पुनः प्रयास करें।');
     } finally {
       setIsOcrLoading(false);
       setOcrProgress(0);
@@ -222,6 +225,7 @@ export const ZoomWritingWindow: React.FC<Props> = ({
       return;
     }
 
+    setStatusNotice(null);
     setIsDictating(true);
     const speechLang = ocrLang === 'hin' ? 'hi-IN' : 'en-US';
     const stopper = startVoiceDictation(
@@ -236,7 +240,7 @@ export const ZoomWritingWindow: React.FC<Props> = ({
       (err) => {
         console.error('Dictation error:', err);
         setIsDictating(false);
-        alert('Voice recognition ended or permission not granted.');
+        setStatusNotice('वॉइस पहचान समाप्त या माइक अनुमति नहीं मिली।');
       }
     );
     dictationStopperRef.current = stopper;
@@ -244,6 +248,11 @@ export const ZoomWritingWindow: React.FC<Props> = ({
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-300 dark:border-slate-800 shadow-2xl flex flex-col items-center p-3 animate-in slide-in-from-bottom-6 duration-200 select-none">
+      {statusNotice && (
+        <div className="mb-1.5 px-3 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-xs font-medium">
+          {statusNotice}
+        </div>
+      )}
       {/* Top Header Bar of Zoom Window */}
       <div className="w-full max-w-4xl flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800 text-xs">
         <div className="flex items-center gap-2">

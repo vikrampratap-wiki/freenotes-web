@@ -1,4 +1,3 @@
-import { jsPDF } from 'jspdf';
 import { Notebook, Page } from '../types';
 import { renderPointsToPath } from './svgPath';
 import { getPdfDocument } from './pdfEngine';
@@ -184,7 +183,7 @@ export async function exportPageToPng(page: Page): Promise<string> {
       ctx.fillRect(txt.x, txt.y, w, h);
     }
     ctx.fillStyle = txt.color;
-    ctx.font = `${txt.fontSize}px Inter, sans-serif`;
+    ctx.font = `${txt.fontSize}px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Devanagari', sans-serif`;
     const lines = txt.text.split('\n');
     lines.forEach((line, idx) => {
       ctx.fillText(line, txt.x + (txt.isStickyNote ? 12 : 0), txt.y + (idx + 1) * (txt.fontSize * 1.25));
@@ -206,6 +205,7 @@ export async function exportNotebookToPdf(
   notebook: Notebook,
   onProgress?: (percent: number) => void
 ): Promise<Blob> {
+  const { jsPDF } = await import('jspdf');
   const firstPage = notebook.pages[0];
   const firstW = firstPage?.width || 794;
   const firstH = firstPage?.height || 1123;

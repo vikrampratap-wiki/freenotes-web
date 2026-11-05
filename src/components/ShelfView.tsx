@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Notebook, PageColor, PageTemplate } from '../types';
 import {
   Plus,
@@ -10,16 +10,14 @@ import {
   MoreVertical,
   Trash2,
   Copy,
-  Calendar,
-  Layers,
   Sparkles,
   Check,
   X,
   FileText,
   Star,
-  Folder,
+  Download,
 } from 'lucide-react';
-import { createNewPage, saveNotebook, deleteNotebook } from '../utils/storage';
+import { createNewPage, saveNotebook, deleteNotebook, generateId } from '../utils/storage';
 import { importPdfFileToPages } from '../utils/pdfEngine';
 
 interface Props {
@@ -57,6 +55,23 @@ export const ShelfView: React.FC<Props> = ({
   const [importProgress, setImportProgress] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    setDeferredInstallPrompt(null);
+  };
 
   // New Notebook Form
   const [newTitle, setNewTitle] = useState('My Notes');
@@ -84,7 +99,7 @@ export const ShelfView: React.FC<Props> = ({
 
   const handleCreateNotebook = async () => {
     const newNb: Notebook = {
-      id: 'nb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+      id: generateId('nb'),
       title: newTitle.trim() || 'Untitled Notebook',
       coverColor: newCoverColor,
       coverPattern: newCoverPattern,
@@ -109,12 +124,12 @@ export const ShelfView: React.FC<Props> = ({
   const handleDuplicate = async (nb: Notebook) => {
     const duplicated: Notebook = {
       ...nb,
-      id: 'nb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+      id: generateId('nb'),
       title: `${nb.title} (Copy)`,
       updatedAt: Date.now(),
       pages: nb.pages.map((p) => ({
         ...p,
-        id: 'page_' + Math.random().toString(36).substring(2, 9),
+        id: generateId('page'),
         strokes: [...p.strokes],
         texts: [...p.texts],
         tapes: [...p.tapes],
@@ -143,7 +158,7 @@ export const ShelfView: React.FC<Props> = ({
       const { pages: newPages } = await importPdfFileToPages(file, (msg) => setImportProgress(msg));
 
       const importedNotebook: Notebook = {
-        id: 'nb_pdf_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+        id: generateId('nb_pdf'),
         title: file.name.replace(/\.pdf$/i, ''),
         coverColor: '#dc2626',
         createdAt: Date.now(),
@@ -175,7 +190,7 @@ export const ShelfView: React.FC<Props> = ({
       const textContent = await file.text();
       const parsed = JSON.parse(textContent);
       if (parsed.id && parsed.pages) {
-        parsed.id = 'nb_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+        parsed.id = generateId('nb');
         parsed.title = parsed.title + ' (Restored)';
         await saveNotebook(parsed);
         onRefreshNotebooks();
@@ -232,6 +247,17 @@ export const ShelfView: React.FC<Props> = ({
 
         {/* Primary Action */}
         <div className="flex items-center gap-2.5 shrink-0">
+          {deferredInstallPrompt && (
+            <button
+              onClick={handleInstallPwa}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-all whitespace-nowrap shrink-0"
+              title="Install FreeNotes Offline App"
+            >
+              <Download size={15} />
+              <span className="hidden sm:inline">Install App</span>
+            </button>
+          )}
+
           <button
             onClick={onToggleDarkMode}
             className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"

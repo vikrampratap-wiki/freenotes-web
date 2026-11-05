@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, StickyNote, Award } from 'lucide-react';
 import { TextItem } from '../types';
+import { generateId } from '../utils/storage';
 
 interface Props {
   isOpen: boolean;
@@ -37,15 +38,15 @@ export const StickyNotesModal: React.FC<Props> = ({
 
   const handleSelectSticky = (style: typeof STICKY_STYLES[0]) => {
     const newNote: TextItem = {
-      id: 'sticky_' + Math.random().toString(36).substring(2, 9),
-      x: 180 + Math.round(Math.random() * 60),
-      y: 200 + Math.round(Math.random() * 60),
+      id: generateId('sticky'),
+      x: 60 + Math.round(Math.random() * 40),
+      y: 120 + Math.round(Math.random() * 40),
       text: '📌 स्टिकी नोट (Sticky Note)\n• मुख्य बिंदु यहाँ लिखें\n• सूत्र और सारांश',
       fontSize: 16,
       color: style.text,
       backgroundColor: style.bg,
       isStickyNote: true,
-      width: 230,
+      width: 220,
     };
     onInsertStickyNote(newNote);
     onClose();
@@ -53,15 +54,15 @@ export const StickyNotesModal: React.FC<Props> = ({
 
   const handleSelectSticker = (sticker: typeof STUDY_STICKERS[0]) => {
     const newSticker: TextItem = {
-      id: 'sticker_' + Math.random().toString(36).substring(2, 9),
-      x: 180 + Math.round(Math.random() * 80),
-      y: 180 + Math.round(Math.random() * 80),
+      id: generateId('sticker'),
+      x: 60 + Math.round(Math.random() * 40),
+      y: 120 + Math.round(Math.random() * 40),
       text: sticker.content,
       fontSize: 15,
       color: sticker.text,
       backgroundColor: sticker.bg,
       isStickyNote: true,
-      width: 240,
+      width: 220,
     };
     onInsertStickyNote(newSticker);
     onClose();

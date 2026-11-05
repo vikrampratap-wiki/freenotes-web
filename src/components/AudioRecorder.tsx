@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AudioRecording } from '../types';
-import { Mic, Square, Play, Pause, Trash2, Volume2, Clock } from 'lucide-react';
+import { Mic, Square, Play, Pause, Trash2, Clock } from 'lucide-react';
+import { generateId } from '../utils/storage';
 
 interface Props {
   recordings: AudioRecording[];
@@ -20,6 +21,7 @@ export const AudioRecorder: React.FC<Props> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [activePlayingId, setActivePlayingId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -39,6 +41,7 @@ export const AudioRecorder: React.FC<Props> = ({
 
   const startRecording = async () => {
     try {
+      setErrorMessage(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -55,7 +58,7 @@ export const AudioRecorder: React.FC<Props> = ({
         const audioUrl = URL.createObjectURL(audioBlob);
 
         const newRec: AudioRecording = {
-          id: 'rec_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+          id: generateId('rec'),
           url: audioUrl,
           duration: recordingTime,
           createdAt: Date.now(),
@@ -63,7 +66,6 @@ export const AudioRecorder: React.FC<Props> = ({
         };
 
         onAddRecording(newRec);
-        // Stop audio tracks
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -76,7 +78,7 @@ export const AudioRecorder: React.FC<Props> = ({
       }, 1000);
     } catch (err) {
       console.error('Microphone access denied:', err);
-      alert('Microphone access is required to record audio lectures.');
+      setErrorMessage('माइक्रोफ़ोन अनुमति आवश्यक है (Microphone access required).');
     }
   };
 
@@ -137,6 +139,12 @@ export const AudioRecorder: React.FC<Props> = ({
           ✕
         </button>
       </div>
+
+      {errorMessage && (
+        <div className="mt-2 p-2 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 text-xs font-medium">
+          {errorMessage}
+        </div>
+      )}
 
       {/* Recording Status & Action Button */}
       <div className="flex items-center justify-between my-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">

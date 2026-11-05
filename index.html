@@ -3,18 +3,66 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="apple-touch-icon" href="./logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
     <title>FreeNotes Web - Ultimate Free Digital Note-Taking</title>
     <meta name="description" content="Free, unlimited digital notebook with realistic pens, PDF annotation, templates, tape tool, and infinite creativity." />
+    <meta name="keywords" content="FreeNotes, digital notebook, PDF annotation, handwriting OCR, study notes, Cornell notes, flashcard tape, offline notebook" />
+    <meta name="author" content="FreeNotes Web" />
+    <meta name="theme-color" content="#2563eb" />
+
+    <!-- OpenGraph / Social Sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="FreeNotes Web" />
     <meta property="og:title" content="FreeNotes Web - Ultimate Free Digital Note-Taking" />
     <meta property="og:description" content="Free, unlimited digital notebook with realistic pens, PDF annotation, templates, tape tool, and infinite creativity." />
+    <meta property="og:image" content="./logo.svg" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="FreeNotes Web - Ultimate Free Digital Note-Taking" />
+    <meta name="twitter:description" content="Free, unlimited digital notebook with realistic pens, PDF annotation, templates, tape tool, and infinite creativity." />
+    <meta name="twitter:image" content="./logo.svg" />
+
+    <!-- PWA Manifest -->
     <link rel="manifest" href="./manifest.json" />
-    <meta name="theme-color" content="#2563eb" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Google Fonts with local/system fallback in CSS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+    <!-- Schema.org Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "FreeNotes Web",
+        "headline": "FreeNotes Web - Ultimate Free Digital Note-Taking",
+        "description": "Free, unlimited digital notebook with realistic pens, PDF annotation, templates, tape tool, and infinite creativity.",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Web, Windows, macOS, Android, iOS",
+        "browserRequirements": "Requires HTML5 Canvas, IndexedDB, and modern JavaScript",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
   </head>
-  <body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 overflow-hidden select-none">
+  <body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+    <noscript>
+      <div style="padding: 2rem; max-width: 36rem; margin: 2rem auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 1rem; font-family: system-ui, -apple-system, sans-serif; text-align: center;">
+        <h1 style="font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-bottom: 0.75rem;">
+          FreeNotes Web चलाने के लिए JavaScript आवश्यक है (JavaScript Required)
+        </h1>
+        <p style="font-size: 0.95rem; color: #475569; line-height: 1.5;">
+          यह एक इंटरैक्टिव डिजिटल नोटबुक, कैनवास ड्रॉइंग और PDF एनोटेशन ऐप है। कृपया अपने ब्राउज़र में JavaScript चालू करें।<br />
+          Please enable JavaScript in your browser settings to use the FreeNotes digital canvas, PDF reader, and offline storage.
+        </p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script type="module">
