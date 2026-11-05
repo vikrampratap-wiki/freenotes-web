@@ -390,7 +390,7 @@ export const CanvasPage: React.FC<Props> = ({
     if (pts.length === 0) return;
 
     // FreeNotes Scratch-to-Erase gesture: rapidly scribbling back and forth over ink erases it!
-    if (activeTool !== 'shape' && activeTool !== 'laser' && detectScribbleScratch(pts)) {
+    if (activeTool !== 'shape' && detectScribbleScratch(pts)) {
       const scribbleBbox = getBoundingBox(pts);
       const pad = 12;
       const minX = scribbleBbox.minX - pad;
@@ -629,7 +629,7 @@ export const CanvasPage: React.FC<Props> = ({
           src={page.pdfBackground}
           alt="PDF Background"
           className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none z-0"
-          style={{ imageRendering: 'high-quality' }}
+          style={{ imageRendering: 'auto' }}
           loading="eager"
         />
       )}
